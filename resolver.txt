@@ -1,0 +1,398 @@
+static float pred_foot_delta(const std::deque<std::shared_ptr<lag_record>>& records) {  // delay updates will suffer instantly
+    if (records.size() < 3)
+        return 0.0f;
+
+    std::vector<float> deltas;
+    deltas.reserve(records.size() - 1);
+
+    for (size_t i = 1; i < records.size(); ++i) {
+        const auto& prev = records[i - 1];
+        const auto& curr = records[i];
+
+        float delta = math::normalized_angle(curr->m_body - prev->m_body);
+        deltas.push_back(delta);
+    }
+
+    float avg_delta = std::accumulate(deltas.begin(), deltas.end(), 0.0f) / deltas.size();
+    float max_abs_delta = 0.0f;
+    float sign = 1.0f;
+
+    for (float d : deltas) {
+        if (fabsf(d) > fabsf(max_abs_delta)) {
+            max_abs_delta = d;
+            sign = (d >= 0.f) ? 1.f : -1.f;
+        }
+    }
+
+    if (fabsf(max_abs_delta) > 35.0f) {
+        return -sign * 60.0f;
+    }
+
+    return 0.0f;
+}
+
+float curvature_heuristic(const std::deque<std::shared_ptr<lag_record>>& records) {
+    if (records.size() < 4)
+        return 0.0f;
+
+    std::vector<float> velocity;
+    for (size_t i = 1; i < records.size(); ++i) {
+        const float dyaw = math::angle_diff(records[i]->m_body, records[i - 1]->m_body);
+        const float dt = records[i]->m_anim_time - records[i - 1]->m_anim_time;
+        velocity.push_back(dt > 0.0f ? dyaw / dt : 0.0f);
+    }
+
+    float curvature = 0.0f;
+    for (size_t i = 1; i < velocity.size(); ++i)
+        curvature += velocity[i] - velocity[i - 1];
+
+    return curvature; // free headshots bro, but u need good anims
+}
+
+float resolver::calculate_stand(aim_player* data, lag_record* record, const lag_record* prev, csgo_player_anim_state* state) { // why u might ask? it works, hs if good
+    if (!data || !record || !prev)
+        return record ? record->m_body : 0.0f;
+
+    const auto& adjust = record->m_layers[animation_layer_adjust];
+    const auto& prev_adjust = prev->m_layers[animation_layer_adjust];
+    const float anim_dt = record->m_anim_time - prev->m_anim_time;
+
+    if (adjust.m_n_sequence == 979 || adjust.m_n_sequence == 978) {
+        const bool cycle_reset = prev_adjust.m_fl_cycle > 0.8f && adjust.m_fl_cycle < 0.2f;
+        const bool weight_spike = (adjust.m_fl_weight - prev_adjust.m_fl_weight > 0.45f) && (adjust.m_fl_weight > 0.9f);
+
+        if (cycle_reset && weight_spike) {
+            return record->m_body;
+        }
+    }
+
+    if (data->m_records.size() >= 4) {
+        float curvature = curvature_heuristic(data->m_records);
+        if (fabsf(curvature) > 35.0f) {
+            return math::normalized_angle(record->m_body + curvature);
+        }
+    }
+
+    if (adjust.m_fl_weight < 0.01f && fabsf(adjust.m_fl_cycle - prev_adjust.m_fl_cycle) < 0.001f) {
+        return math::normalized_angle(record->m_body + 180.0f); // yes, lol.
+    }
+
+    if (data->m_records.size() >= 3) {
+        const float pred_offset = pred_foot_delta(data->m_records);
+        return math::normalized_angle(record->m_body + pred_offset);
+    }
+
+    const float max_desync = state->m_fl_aim_yaw_max; // valve is retarded for this but its working
+    const float body_delta = math::angle_diff(record->m_body, prev->m_body);
+
+    const bool clamp_l = body_delta < -max_desync + 0.1f;
+    const bool clamp_r = body_delta > max_desync - 0.1f;
+
+    if (clamp_l || clamp_r) {
+        const float invert = clamp_l ? -max_desync : max_desync;
+        return math::normalized_angle(record->m_body + invert);
+    }
+
+    const int act = record->m_layers[6].m_n_sequence;
+    if (act == act_csgo_idle_turn_balance_adjust && anim_dt > 0.0f) {
+        const float foot_yaw_prev = prev->m_abs_ang.y;
+        const float foot_yaw_now = record->m_abs_ang.y;
+        const float yaw_delta = math::angle_diff(foot_yaw_now, foot_yaw_prev);
+        const float yaw_speed = fabsf(yaw_delta / anim_dt);
+
+        const bool fast_turn = yaw_speed > 120.0f;
+        const bool snapped_to_body = fabsf(math::angle_diff(foot_yaw_now, record->m_body)) < 5.0f;
+
+        if (fast_turn && snapped_to_body && adjust.m_fl_cycle < 0.2f) {
+            return record->m_body;
+        }
+    }
+
+    const float abs_yaw_delta = fabsf(math::angle_diff(record->m_abs_ang.y, prev->m_abs_ang.y));
+    const float body_yaw_delta = fabsf(math::angle_diff(record->m_body, prev->m_body));
+
+    if (abs_yaw_delta > 58.f && body_yaw_delta < 5.f) {
+        return math::normalized_angle(record->m_body + 180.0f);
+    }
+
+    return math::normalized_angle(prev->m_eye_angles.y + body_delta);
+}
+
+static float pred_foot_yaw(const lag_record& a, const lag_record& b, float predicted_offset) {
+    constexpr float foot_speed = 80.0f; // i got this from my ass, its good
+
+    const float old_yaw = a.m_body;
+    const float new_yaw = b.m_body;
+    const float dt = b.m_anim_time - a.m_anim_time;
+
+    if (dt <= 0.0f)
+        return old_yaw;
+
+    const float max_delta = foot_speed * dt;
+    const float body_delta = math::normalized_angle(new_yaw - old_yaw);
+    const float abs_foot_delta = math::angle_diff(b.m_abs_ang.y, a.m_abs_ang.y);
+
+    const float blended_delta = (body_delta * 0.5f) + (abs_foot_delta * 0.5f);
+    const float abs_blended = fabsf(blended_delta);
+
+    float resolved;
+    if (abs_blended <= max_delta) {
+        resolved = old_yaw + blended_delta;
+    }
+    else {
+        resolved = old_yaw + copysignf(max_delta, blended_delta);
+        resolved = math::normalized_angle(resolved + predicted_offset);
+    }
+
+    return math::normalized_angle(resolved);
+}
+
+static bool lby_spam(const lag_record& curr, const lag_record& prev) {
+    const auto& layer0_curr = curr.m_layers[0];
+    const auto& layer0_prev = prev.m_layers[0];
+
+    return (
+        layer0_curr.m_n_sequence == layer0_prev.m_n_sequence &&
+        layer0_curr.m_fl_cycle < layer0_prev.m_fl_cycle &&
+        fabsf(layer0_curr.m_fl_playback_rate - layer0_prev.m_fl_playback_rate) > 0.02f
+    );   
+}
+
+void resolver::resolve_stand(aim_player* data, lag_record* record, csgo_player_anim_state* state) {
+    float away = get_away_angle(record);
+    move_data_t* move = &data->m_walk_record;
+
+    c_animation_layer* adjust = &record->m_layers[animation_layer_adjust];
+    lag_record* prev = find_previous_record(data);
+
+    // hhh, lil paste
+    if (move->m_sim_time > 0.f) {
+        vec3_t delta = move->m_origin - record->m_origin;
+        if (delta.length() <= 128.f) {
+            data->m_moved = true;
+        }
+    }
+
+    int act = data->m_player->get_sequence_activity(adjust->m_n_sequence);
+    if (prev) {
+        const auto& prev_adjust = prev->m_layers[animation_layer_adjust];
+
+        const bool adjust_sequence_valid =
+            adjust->m_n_sequence == 979 || adjust->m_n_sequence == 978;
+
+        const bool adjust_reset =
+            prev_adjust.m_fl_cycle > 0.8f && adjust->m_fl_cycle < 0.2f;
+
+        const bool weight_spike =
+            (adjust->m_fl_weight - prev_adjust.m_fl_weight > 0.45f) &&
+            (adjust->m_fl_weight > 0.9f);
+
+        const bool lby_snap = adjust_sequence_valid && adjust_reset && weight_spike;
+
+        if (lby_snap) {
+            data->m_trusted_lby = record->m_body;
+            data->m_trusted_lby_time = record->m_anim_time;
+            record->m_eye_angles.y = record->m_body;
+            return;
+        }
+    }
+
+    const auto& curr_idle = record->m_layers[11];
+    float delta_cycle = 0.0f;
+    float delta_playback = 0.0f;
+
+    if (prev) {
+        const auto& prev_idle = prev->m_layers[11];
+        delta_cycle = fabsf(curr_idle.m_fl_cycle - prev_idle.m_fl_cycle);
+        delta_playback = fabsf(curr_idle.m_fl_playback_rate - prev_idle.m_fl_playback_rate);
+
+        if (curr_idle.m_n_sequence == 979 && prev_idle.m_n_sequence == 979) {
+            if (delta_cycle < 0.01f && delta_playback < 0.005f)
+                data->m_fake_idle_ticks++;
+            else
+                data->m_fake_idle_ticks = 0;
+
+            if (data->m_fake_idle_ticks > 2) {
+                record->m_eye_angles.y = get_away_angle(record) + 180.f;
+                return;
+            }
+        }
+    }
+
+    if (act == act_csgo_idle_turn_balance_adjust && prev) {
+        const float last_foot_yaw = prev->m_abs_ang.y;
+        const float curr_foot_yaw = record->m_abs_ang.y;
+        const float last_body = prev->m_body;
+        const float dt = record->m_anim_time - prev->m_anim_time;
+
+        if (dt > 0.0f) {
+            float yaw_delta = math::angle_diff(curr_foot_yaw, last_foot_yaw);
+            float yaw_speed = fabsf(yaw_delta / dt);
+
+            const bool turned_fast = yaw_speed > 120.0f;
+            const bool aligned_with_body = fabsf(math::angle_diff(curr_foot_yaw, record->m_body)) < 5.0f;
+            const bool adjust_cycle_low = adjust->m_fl_cycle < 0.2f && adjust->m_fl_weight > 0.9f;
+
+            if (turned_fast && aligned_with_body && adjust_cycle_low) {
+                record->m_eye_angles.y = record->m_body;
+                return;
+            }
+        }
+    }
+
+    if (data->m_moved) {
+        float delta = record->m_anim_time - move->m_anim_time;
+
+        if (delta < 0.22f) { // someone, fix this..
+            record->m_eye_angles.y = move->m_body;
+            return;
+        }
+        else if (record->m_anim_time >= data->m_body_update) {
+            if (data->m_body_index <= 3) {
+                record->m_eye_angles.y = record->m_body;
+                data->m_body_update = record->m_anim_time + 1.1f;
+                return;
+            }
+
+            record->m_eye_angles.y = move->m_body;
+
+            if (!(data->m_stand_index % 3))
+                record->m_eye_angles.y += g_main.random_float(-35.f, 35.f);
+
+            if (data->m_stand_index > 6 && act != act_csgo_idle_turn_balance_adjust)
+                record->m_eye_angles.y = move->m_body + 180.f;
+            else if (data->m_stand_index > 4 && act != act_csgo_idle_turn_balance_adjust)
+                record->m_eye_angles.y = away + 180.f;
+
+            return;
+        }
+    }
+
+    if (data->m_records.size() >= 2) {
+        const auto& a = *data->m_records[data->m_records.size() - 2];
+        const auto& b = *data->m_records[data->m_records.size() - 1];
+
+        std::deque<std::shared_ptr<lag_record>> shared_records;
+        for (const auto& rec : data->m_records) {
+            if (rec)
+                shared_records.push_back(std::make_shared<lag_record>(*rec));
+        }
+
+        float predicted_offset = pred_foot_delta(shared_records);
+
+        if (fabsf(predicted_offset) > 1.0f) {
+            record->m_eye_angles.y = pred_foot_yaw(a, b, predicted_offset); // easiest headshot ever of my life, god bless
+        }
+        else {
+            record->m_eye_angles.y = calculate_stand(data, record, &a, state);
+        }
+
+        return;
+    }
+
+
+    if (data->m_records.size() >= 4) {
+        float curvature = curvature_heuristic(data->m_records);
+
+        if (fabsf(curvature) > 40.0f) { // this is insane.. all cheats will suffer
+            const auto& a = *data->m_records[data->m_records.size() - 2];
+            const auto& b = *data->m_records[data->m_records.size() - 1];
+
+            float predicted_offset = pred_foot_delta(data->m_records);
+            float predicted_yaw = pred_foot_yaw(a, b, predicted_offset);
+
+            record->m_eye_angles.y = predicted_yaw;
+            return;
+        }
+    }
+
+    {
+        if (state) {
+            const float foot_yaw = record->m_abs_ang.y;
+            const float width_factor = 1.0f;
+            const float yaw_max = state->m_fl_aim_yaw_max * width_factor;
+            const float yaw_min = state->m_fl_aim_yaw_min * width_factor;
+
+            // clamp the predicted deltas
+            const float dy = math::angle_diff(record->m_body, foot_yaw); // real yaw ≈ body in this case, it will intersect because its close enough, recommended to safe point here
+            float corrected_yaw = foot_yaw;
+
+            if (dy > yaw_max - 0.5f && dy < yaw_max + 0.5f) {
+                corrected_yaw = foot_yaw + yaw_max;
+                record->m_eye_angles.y = math::normalized_angle(corrected_yaw);
+                return;
+            }
+            else if (dy < yaw_min + 0.5f && dy > yaw_min - 0.5f) {
+                corrected_yaw = foot_yaw + yaw_min;
+                record->m_eye_angles.y = math::normalized_angle(corrected_yaw);
+                return;
+            }
+        }
+    }
+
+    if (data->m_records.size() >= 2) {
+        const auto& prev = *data->m_records[data->m_records.size() - 2].get();
+        const auto& curr = *data->m_records[data->m_records.size() - 1].get();
+
+        if (lby_spam(curr, prev)) {
+            record->m_eye_angles.y = math::normalized_angle(prev.m_body + 180.f);
+            return;
+        }
+    }
+
+    const auto& layer0 = record->m_layers[0];
+    const float body = record->m_body;
+    const float away_normal = away;
+    const float fl_weight = adjust->m_fl_weight;
+    const float fl_cycle = adjust->m_fl_cycle;
+
+    bool is_adjust = act == act_csgo_idle_turn_balance_adjust;
+    bool is_mad = (fl_weight < 0.2f && fl_cycle > 0.01f && fl_cycle < 0.9f);
+    bool is_lol = (
+        layer0.m_fl_playback_rate > 0.96f &&
+        layer0.m_fl_cycle < 0.07f &&
+        prev && layer0.m_n_sequence == prev->m_layers[0].m_n_sequence &&
+        !is_adjust
+    );
+    bool is_fake_idle = (adjust->m_n_sequence == 979 && fl_cycle < 0.01f); // idle_adjust fake layer spam, dont use this bs
+
+    int index = data->m_stand_index2 % 6;
+
+    switch (index) { // retard anti brute.. delete it
+    case 0:
+        // hahaha otc method
+        record->m_eye_angles.y = away_normal + 180.f;
+        break;
+
+    case 1:
+        // lol, why?
+        record->m_eye_angles.y = body;
+        break;
+
+    case 2:
+        // fake left
+        if (is_mad)
+            record->m_eye_angles.y = body + 70.f;
+        else
+            record->m_eye_angles.y = body + 110.f;
+        break;
+
+    case 3:
+        // fake right
+        if (is_mad)
+            record->m_eye_angles.y = body - 70.f;
+        else
+            record->m_eye_angles.y = body - 110.f;
+        break;
+
+    case 4:
+        // ahahahahah, its not 2020 anymore..
+        if (is_fake_idle || is_lol)
+            record->m_eye_angles.y = away_normal + g_main.random_float(-25.f, 25.f);
+        else
+            record->m_eye_angles.y = away_normal + 180.f + g_main.random_float(-20.f, 20.f);
+        break;
+    }
+
+    record->m_eye_angles.y = math::normalized_angle(record->m_eye_angles.y);
+}
