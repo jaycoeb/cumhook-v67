@@ -129,7 +129,7 @@ void renderWatermark(int screen_width, int screen_height) {
   const std::string sep = XOR(" | ");
 
   // --- Build stat strings (only if enabled) ---
-  const std::string title = XOR("Cumhook.xyz");
+  const std::string title = XOR("cumhook v67");
   const std::string fps_str =
       cfg.show_fps ? tfm::format(XOR("fps: %i"), s_fps) : "";
   const std::string ping_str =
@@ -181,7 +181,7 @@ void renderWatermark(int screen_width, int screen_height) {
   // === BACKGROUND PANEL ===
   // Semi-transparent dark rectangle
   render::rect_filled(panel_x, panel_y, content_w, panel_h,
-                      {8, 8, 14, alpha_bg});
+                      {200, 200, 200, alpha_bg});
   // Subtle border outline
   render::rect(panel_x, panel_y, content_w, panel_h, {50, 50, 70, alpha_brd});
 
@@ -209,7 +209,7 @@ void renderWatermark(int screen_width, int screen_height) {
   {
     const int glow_a = (int)(s_glow_pulse * 55.f * s_fade_alpha);
     render::rect_filled(text_x - 2, text_y - 1, title_sz.m_width + 4,
-                        title_sz.m_height + 2, {130, 60, 220, glow_a});
+                        title_sz.m_height + 2, {255, 255, 255, glow_a});
   }
 
   // Title — "eternal.codes" — bold, slightly blue-white
@@ -217,8 +217,8 @@ void renderWatermark(int screen_width, int screen_height) {
   text_x += title_sz.m_width;
 
   // Separator and stat field colors
-  const Color sep_color = {80, 80, 110, alpha_dim};
-  const Color stat_color = {165, 165, 185, alpha_dim};
+  const Color sep_color = {80, 80, 80, alpha_dim};
+  const Color stat_color = {10, 10, 10, alpha_dim};
 
   // Helper: draw a separator then a stat string, advancing text_x
   auto draw_stat = [&](bool show, const std::string &val,

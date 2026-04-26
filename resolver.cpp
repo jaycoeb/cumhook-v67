@@ -367,11 +367,11 @@ void Resolver::SetMode( LagRecord* record ) {
 	float speed = record->m_anim_velocity.length( );
 
 	// if on ground, moving, and not fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && speed > 0.1f && !record->m_fake_walk )
+	if( ( record->m_flags & FL_ONGROUND ) && speed > 0.15f && !record->m_fake_walk )
 		record->m_mode = Modes::RESOLVE_WALK;
 
 	// if on ground, not moving or fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && ( speed <= 0.1f || record->m_fake_walk ) )
+	if( ( record->m_flags & FL_ONGROUND ) && ( speed <= 0.15f || record->m_fake_walk ) )
 		record->m_mode = Modes::RESOLVE_STAND;
 
 	// if not on ground.

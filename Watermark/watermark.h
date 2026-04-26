@@ -9,8 +9,8 @@ namespace watermark {
 
 // All configurable parameters for the watermark.
 struct Config {
-  Color accent_start = {148, 0, 211, 255}; // purple
-  Color accent_end = {0, 200, 255, 255};   // cyan
+  Color accent_start = {245, 245, 245, 255}; // white
+  Color accent_end = { 245, 245, 245, 255 };   // white
   float opacity = 0.85f;
   float anim_speed = 1.0f;
   bool show_fps = true;
