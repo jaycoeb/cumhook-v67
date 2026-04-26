@@ -1045,7 +1045,6 @@ bool Aimbot::SelectTarget(LagRecord* record, const vec3_t& aim, float damage) {
 		if (math::GetFOV(g_cl.m_view_angles, g_cl.m_shoot_pos, aim) > g_menu.main.aimbot.fov_amount.get())
 			return false;
 	}
-
 	switch (g_menu.main.aimbot.selection.get()) {
 
 		// distance.
@@ -1176,3 +1175,4 @@ void Aimbot::NoSpread() {
 	// compensate.
 	g_cl.m_cmd->m_view_angles -= { -math::rad_to_deg(std::atan(spread.length_2d())), 0.f, math::rad_to_deg(std::atan2(spread.x, spread.y)) };
 }
+

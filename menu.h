@@ -1938,7 +1938,7 @@ public:
 	Checkbox ranks;
 	Checkbox clantag;
 	Checkbox killsay;
-	Checkbox Quit_on_hurt;
+	Checkbox quit_on_hurt;
 
 public:
 	void init() {
@@ -2039,8 +2039,8 @@ public:
 		killsay.setup(XOR("killsay"), XOR("killsay"));
 		RegisterElement(&killsay, 1);
 
-		Quit_on_hurt.setup(XOR("quit on hurt"), XOR("quit_on_hurt"));
-		RegisterElement(&Quit_on_hurt, 1);
+		quit_on_hurt.setup(XOR("quit on hurt"), XOR("quit_on_hurt"));
+		RegisterElement(&quit_on_hurt, 1);
 	}
 };
 

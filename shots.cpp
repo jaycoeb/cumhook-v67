@@ -242,6 +242,98 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	// get remaining hp.
 	hp = evt->m_keys->FindKey( HASH( "health" ) )->GetInt( );
 
+	if (g_menu.main.misc.killsay.get())
+	{
+		if (hp < 1)
+		{
+
+				switch ((rand() % 20) + 1) {
+
+				case 1:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say tapped by cumhook v420"));
+					break;
+
+				case 2:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say i love femboys"));
+					break;
+
+				case 3:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say 2ezlma0 is my daddy"));
+					break;
+
+				case 4:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say omg cumhook v420 is so good"));
+					break;
+
+				case 5:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say my cumshot killed you"));
+					break;
+
+				case 6:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say please master rail me harder~"));
+					break;
+
+				case 7:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say taste my cock as you jerk yours faggot"));
+					break;
+
+				case 8:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say im only gay for you silly~"));
+					break;
+
+				case 9:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say cumhook proudly has the best femboy in their discord server"));
+					break;
+
+				case 10:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say cumhook is now even more pasted ;)"));
+					break;
+
+				case 11:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say *nuzzles your bulge* daddy its all excited to see me~!"));
+					break;
+
+				case 12:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say i am sorry for all the homosexuality this killsay contains"));
+					break;
+
+				case 13:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say ratio + dont care + didn't ask + cry about it + stay mad + get real + L + mald seethe cope harder + hoes mad + basic + skill issue + ratio + you fell off + 1"));
+					break;
+
+				case 14:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say LoL u fanN kuku hdf hurensohn xy0 since 2k7 gang u spic monkey lol who.ru dog fucking nn bitch ure 0 in life im veteran i own u dog."));
+					break;
+
+				case 15:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say NIGGER!"));
+					break;
+
+				case 16:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say best cumhook update by far"));
+					break;
+
+				case 17:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say presh the little butt button that makes me moan in pleasure"));
+					break;
+
+				case 18:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say oh- oh god... babe did you cum inside~"));
+					break;
+
+				case 19:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say s-stop im gonna... c-cum~ don...don't make me inside your mouth~ mmfh *thrusts into your mouth slightly in pleasure*"));
+					break;
+
+				case 20:
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say koen is handsome asf"));
+					break;
+				}
+			
+		}
+	}
+
+
 	// hitmarker.
 	if ( g_menu.main.misc.hitmarker.get( ) ) {
 		g_visuals.m_hit_duration = 1.f;
