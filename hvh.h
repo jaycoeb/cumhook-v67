@@ -49,6 +49,7 @@ public:
 	float  m_auto_last;
 	float  m_view;
 	int    m_sway = 0;
+	int	   m_flick_ticks = 0;
 
 	bool   m_left, m_right, m_back;
 	int direction = -1;

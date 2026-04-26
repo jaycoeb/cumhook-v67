@@ -208,7 +208,7 @@ public:
 		pitch_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		RegisterElement(&pitch_stand);
 
-		yaw_stand.setup(XOR("yaw"), XOR("yaw_stnd"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("sexy"), XOR("")});
+		yaw_stand.setup(XOR("yaw"), XOR("yaw_stnd"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("sexy"), XOR("mathematics")});
 		yaw_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		RegisterElement(&yaw_stand);
 
@@ -259,7 +259,7 @@ public:
 		dir_lock.AddShowCallback(callbacks::HasStandYaw);
 		RegisterElement(&dir_lock);
 
-		body_fake_stand.setup(XOR("fake body"), XOR("body_fake_stnd"), { XOR("off"), XOR("left"), XOR("right"), XOR("opposite"), XOR("z") });
+		body_fake_stand.setup(XOR("fake body"), XOR("body_fake_stnd"), { XOR("off"), XOR("left"), XOR("right"), XOR("opposite"), XOR("z"), XOR("optimal"), XOR("custom"), XOR("cumhook body")});
 		body_fake_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		body_fake_stand.AddShowCallback(callbacks::HasStandYaw);
 		RegisterElement(&body_fake_stand);
@@ -269,7 +269,7 @@ public:
 		pitch_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		RegisterElement(&pitch_walk);
 
-		yaw_walk.setup(XOR("yaw"), XOR("yaw_walk"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random") });
+		yaw_walk.setup(XOR("yaw"), XOR("yaw_stnd"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("sexy"), XOR("mathematics") });
 		yaw_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		RegisterElement(&yaw_walk);
 
@@ -320,7 +320,7 @@ public:
 		pitch_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		RegisterElement(&pitch_air);
 
-		yaw_air.setup(XOR("yaw"), XOR("yaw_air"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random") });
+		yaw_air.setup(XOR("yaw"), XOR("yaw_stnd"), { XOR("off"), XOR("direction"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("sexy"), XOR("mathematics") });
 		yaw_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		RegisterElement(&yaw_air);
 
@@ -372,7 +372,7 @@ public:
 		RegisterElement(&body_fake_air);
 
 		// col2.
-		fake_yaw.setup(XOR("fake yaw"), XOR("fake_yaw"), { XOR("off"), XOR("default"), XOR("relative"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("local view") });
+		fake_yaw.setup(XOR("fake yaw"), XOR("fake_yaw"), { XOR("off"), XOR("default"), XOR("relative"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("local view"), XOR("spinbot"), XOR("reverse lby"), XOR("match lby"), XOR("cumhook yaw"), XOR("fake flick"), XOR("schizophrenic random angle generator"), XOR("chatGPT"), XOR("claude")});
 		RegisterElement(&fake_yaw, 1);
 
 		fake_relative.setup("", XOR("fake_relative"), -90.f, 90.f, false, 0, 0.f, 5.f, XOR(L"°"));

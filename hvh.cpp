@@ -680,6 +680,14 @@ void HVH::DoRealAntiAim() {
 				}
 				break;
 
+			//sincostan
+			case 6:
+				m_sway++;
+				g_cl.m_cmd->m_view_angles.y += (sin(m_sway) * 30) + (cos(m_sway) * 30) + (tan(m_sway) * 30);
+				if (g_cl.m_cmd->m_view_angles.y > 360)
+					m_sway = 1;
+				break;
+
 			default:
 				break;
 			}
@@ -821,6 +829,182 @@ void HVH::DoFakeAntiAim() {
 			g_cl.m_cmd->m_view_angles.y = pow(m_sway, asin(m_sway / 69));
 		break;
 
+		//broken fake flick (probably should be removed but hey it was a pain to write so here it is) (thank you cosmic for the idea) (also this is not actually broken, it works as intended, which is to be a random mess of angles that changes every tick) (also thank you to anyone who actually reads this comment, you are a real one) (also sorry for the cringe code, it was a pain to write and i just wanted to have some fun with it) (also if you want to use this code for your own cheat, go ahead, just give credit where credit is due and dont) (also if you want to improve this code, go ahead, just make sure to keep the random nature of it and dont make it into a predictable pattern) (also if you made it this far, you are a real one and i love you) (also if you didnt make it this far, you are still a real one and i love you too) (also if you want to see more of this cringe code, let me know, i have a lot of) it was a pain to write and i just wanted to have some fun with it) (also if you want to see more of this cringe code, let me know, i have a lot of it)
+	case 11:
+		if (g_cl.m_body > 67.f) {
+			g_cl.m_cmd->m_view_angles.y += 180.f;
+			g_cl.m_body = 0.f;
+		}
+		 else
+			g_cl.m_cmd->m_view_angles.y = g_cl.m_body - 10.f;
+
+		g_cl.m_cmd->m_view_angles.y = g_csgo.m_globals->m_curtime;
+		break;
+
+		//schizophrenic random angle generator
+	case 12:
+		g_cl.m_cmd->m_view_angles.y = rand() % 360;
+		if (g_cl.m_tick % 10 == 0)
+			g_cl.m_cmd->m_view_angles.y += 90.f;
+		else if (g_cl.m_tick % 15 == 0)
+			g_cl.m_cmd->m_view_angles.y -= 90.f;
+		else if (g_cl.m_tick % 20 == 0)
+			g_cl.m_cmd->m_view_angles.y += 180.f;
+		else if (g_cl.m_tick % 25 == 0)
+			g_cl.m_cmd->m_view_angles.y -= 180.f;
+		else if (g_cl.m_tick % 30 == 0)
+			g_cl.m_cmd->m_view_angles.y += ((rand() % 180) - (rand() % -180));
+		else
+			g_cl.m_cmd->m_view_angles.y += ((rand() % 90) - (rand() % -90));
+
+		g_cl.m_cmd->m_view_angles.y += g_menu.main.antiaim.fake_relative.get();
+		g_cl.m_cmd->m_view_angles.y += sin(g_csgo.m_globals->m_curtime * 5.f) * 30.f;
+		break;
+
+		// chatGPT
+	case 13:
+		struct ChaosState {
+			float phase = 0.f;
+			float amplitude = 60.f;
+			float frequency = 5.f;
+			float targetAmplitude = 60.f;
+			float targetFrequency = 5.f;
+			float blend = 0.f;
+			int mode = 0;
+		};
+
+		static ChaosState chaos;
+
+		// time base
+		float time = g_cl.m_tick * 0.1f;
+
+		// --- MODE SWITCHING (adds behavioral jumps) ---
+		if ((int)(time) % 3 == 0) {
+			chaos.mode = (chaos.mode + 1) % 4;
+
+			// pick new targets
+			chaos.targetAmplitude = 30.f + std::fmod(std::abs(std::sin(time * 1.7f)) * 120.f, 120.f);
+			chaos.targetFrequency = 2.f + std::fmod(std::abs(std::cos(time * 0.9f)) * 10.f, 10.f);
+		}
+
+		// smooth transition between modes
+		float lerpSpeed = 0.05f;
+		chaos.amplitude += (chaos.targetAmplitude - chaos.amplitude) * lerpSpeed;
+		chaos.frequency += (chaos.targetFrequency - chaos.frequency) * lerpSpeed;
+
+		// --- BASE CHAOTIC SIGNAL ---
+		float signal = 0.f;
+
+		switch (chaos.mode) {
+		case 0:
+			signal = std::sin(time * chaos.frequency);
+			break;
+		case 1:
+			signal = std::sin(time * chaos.frequency) * std::cos(time * chaos.frequency * 0.5f);
+			break;
+		case 2:
+			signal = std::cos(time * chaos.frequency * 1.3f) + std::sin(time * chaos.frequency * 0.3f);
+			break;
+		case 3:
+			signal = std::sin(time * chaos.frequency * 2.0f) * std::sin(time * chaos.frequency * 0.25f);
+			break;
+		}
+
+		// --- FRACTAL-LIKE LAYERING ---
+		float fractal = 0.f;
+		float scale = 1.f;
+		for (int i = 0; i < 4; ++i) {
+			fractal += std::sin(time * chaos.frequency * scale) / scale;
+			scale *= 2.f;
+		}
+
+		// --- SMOOTH NOISE APPROXIMATION ---
+		float noise = std::sin(time * 12.9898f) * std::cos(time * 78.233f);
+
+		// --- RANDOM BURSTS (controlled spikes) ---
+		float burst = 0.f;
+		if ((int)(time * 4.f) % 7 == 0) {
+			burst = std::sin(time * 40.f) * 0.5f;
+		}
+
+		// --- COMBINE EVERYTHING ---
+		float offset =
+			signal * chaos.amplitude +
+			fractal * 20.f +
+			noise * 15.f +
+			burst * 50.f;
+
+		// --- SOFT CLAMP (prevents extreme snapping) ---
+		float maxOffset = 120.f;
+		offset = std::max(-maxOffset, std::min(maxOffset, offset));
+
+		// --- FINAL SMOOTHING ---
+		static float last = 0.f;
+		float smooth = 0.15f;
+		offset = last + (offset - last) * smooth;
+		last = offset;
+
+		// APPLY (for legitimate uses like camera motion, etc.)
+		g_cl.m_cmd->m_view_angles.y = m_direction + offset;
+		break;
+
+		// claude	
+	case 14:	
+		constexpr float MAX_YAW_DELTA = 179.f;
+		constexpr float SWAY_NORMALIZE = 69.f;
+		constexpr int   FLICK_DURATION = 1;   // ticks the fake is exposed
+
+		float& yaw = g_cl.m_cmd->m_view_angles.y;
+		const int   tick = g_cl.m_tick;
+		const float curtime = g_csgo.m_globals->m_curtime;
+
+		// --- Fake flick state -----------------------------------
+	    // m_flick_ticks counts down; when > 0 the fake is live
+		if (m_flick_ticks > 0)
+		{
+			// Exposed tick: push yaw to the fake (real-side) angle
+			yaw += MAX_YAW_DELTA;
+			--m_flick_ticks;
+			 break; // skip all other anti-aim logic this tick
+		}
+
+		 // Trigger a flick every N ticks (tweak to taste)
+		 constexpr int FLICK_INTERVAL = 24;
+		 if (tick % FLICK_INTERVAL == 0)
+		 {
+			 m_flick_ticks = FLICK_DURATION; // arms the flick for next tick
+		 }
+
+		 // --- Normal cover logic (from before) -------------------
+		 const int rand_tick = rand() % 64;
+
+		 if (tick < 10)
+		 {
+			 yaw += 162.f;
+		 }
+		 else if (m_sway == 5) { yaw += 80.f; }
+		 else if (m_sway == 20) { yaw -= 87.f; }
+		 else if (tick == 10) { yaw += 177.f; }
+		 else if (tick == 12) { yaw += 170.f; }
+		 else if (tick == 21) { yaw -= MAX_YAW_DELTA; }
+		 else if (tick == 37) { yaw += MAX_YAW_DELTA; }
+		 else if (tick == 63) { yaw += 177.f; }
+		 else if (tick == rand_tick) { yaw += MAX_YAW_DELTA; }
+		 else if (curtime == 3.f || curtime == 5.f) { yaw += 177.f; }
+		 else if (curtime == 9.f || curtime == 12.f) { yaw -= 177.f; }
+		 else if (m_sway % 5 == 0)
+		 {
+			 const float jitter = static_cast<float>(rand() % 361) - 180.f;
+			 yaw += jitter + static_cast<float>(m_sway);
+		 }
+		 else
+		 {
+			 const float t = std::clamp(static_cast<float>(m_sway) / SWAY_NORMALIZE, -1.f, 1.f);
+			 yaw = std::pow(static_cast<float>(m_sway), std::asin(t));
+		 }
+
+		 break;
+		 
 	default:
 		break;
 	}
