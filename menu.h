@@ -32,7 +32,6 @@ public:
 	MultiDropdown baim1;
 	MultiDropdown baim2;
 	Slider        baim_hp;
-	Slider        baim_hp;
 	Keybind       baim_key;
 	Checkbox	  Dubbletap$$$;
 	Keybind       DubbletapKey$$$;
