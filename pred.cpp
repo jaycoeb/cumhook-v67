@@ -55,8 +55,10 @@ void InputPrediction::update( ) {
 }
 
 void InputPrediction::run( ) {
-	static CMoveData data{};
+	CMoveData data;
+	std::memset(&data, 0, sizeof(CMoveData));
 
+	m_in_prediction = g_csgo.m_prediction->m_in_prediction;
 	g_csgo.m_prediction->m_in_prediction = true;
 
 	// CPrediction::StartCommand
@@ -69,12 +71,14 @@ void InputPrediction::run( ) {
 	// backup globals.
 	m_curtime   = g_csgo.m_globals->m_curtime;
 	m_frametime = g_csgo.m_globals->m_frametime;
+	m_tickbase = g_cl.m_local->m_nTickBase();
+	m_velocity = g_cl.m_local->m_vecVelocity();
 
 	// CPrediction::RunCommand
 
 	// set globals appropriately.
 	g_csgo.m_globals->m_curtime   = game::TICKS_TO_TIME( g_cl.m_local->m_nTickBase( ) );
-	g_csgo.m_globals->m_frametime = g_csgo.m_prediction->m_engine_paused ? 0.f : g_csgo.m_globals->m_interval;
+	g_csgo.m_globals->m_frametime = g_csgo.m_globals->m_interval;
 
 	// set target player ( host ).
 	g_csgo.m_move_helper->SetHost( g_cl.m_local );
@@ -93,7 +97,7 @@ void InputPrediction::run( ) {
 }
 
 void InputPrediction::restore( ) {
-	g_csgo.m_prediction->m_in_prediction = false;
+	g_csgo.m_prediction->m_in_prediction = m_in_prediction;
 
 	*g_csgo.m_nPredictionRandomSeed = -1;
 	g_csgo.m_pPredictionPlayer      = nullptr;
@@ -101,4 +105,7 @@ void InputPrediction::restore( ) {
 	// restore globals.
 	g_csgo.m_globals->m_curtime   = m_curtime;
 	g_csgo.m_globals->m_frametime = m_frametime;
+
+	g_cl.m_local->m_nTickBase() = m_tickbase;
+	g_cl.m_local->m_vecVelocity() = m_velocity;
 }

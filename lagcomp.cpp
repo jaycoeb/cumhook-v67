@@ -34,6 +34,22 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 	// causes the prediction to stack on eachother.
 	record->predict();
 
+	if (size > 1) {
+		float dt = record->m_sim_time - data->m_records[1]->m_sim_time;
+
+		if (dt > 0.f) {
+			record->m_velocity = (record->m_origin - data->m_records[1]->m_origin) / dt;
+			record->m_pred_velocity = record->m_velocity;
+
+			// ✅ STEP 7 GOES HERE
+			float speed = record->m_velocity.length();
+			if (speed > 300.f)
+				record->m_velocity *= (300.f / speed);
+
+			record->m_pred_velocity = record->m_velocity;
+		}
+	}
+
 	// check if lc broken.
 	if (size > 1 && ((record->m_origin - data->m_records[1]->m_origin).length_sqr() > LAG_COMPENSATION_TELEPORTED_DISTANCE_SQR
 		|| size > 2 && (data->m_records[1]->m_origin - data->m_records[2]->m_origin).length_sqr() > LAG_COMPENSATION_TELEPORTED_DISTANCE_SQR))
@@ -53,11 +69,13 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 
 	// compute the amount of lag that we will predict for, if we have one set of data, use that.
 	// if we have more data available, use the prevoius lag delta to counter weird fakelags that switch between 14 and 2.
-	int lag = (size <= 2) ? game::TIME_TO_TICKS(record->m_sim_time - data->m_records[1]->m_sim_time)
-		: game::TIME_TO_TICKS(data->m_records[1]->m_sim_time - data->m_records[2]->m_sim_time);
+	int lag = game::TIME_TO_TICKS(record->m_sim_time - data->m_records[1]->m_sim_time);
 
-	// clamp this just to be sure.
-	math::clamp(lag, 1, 15);
+	// fallback if invalid
+	if (lag <= 0 && size > 2)
+		lag = game::TIME_TO_TICKS(data->m_records[1]->m_sim_time - data->m_records[2]->m_sim_time);
+
+	lag = std::clamp(lag, 1, 15);
 
 	// get the delta in ticks between the last server net update
 	// and the net update on which we created this record.
@@ -66,7 +84,7 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 	// if the lag delta that is remaining is less than the current netlag
 	// that means that we can shoot now and when our shot will get processed
 	// the origin will still be valid, therefore we do not have to predict.
-	if (g_cl.m_latency_ticks <= lag - updatedelta)
+	if (g_cl.m_latency_ticks <= lag - updatedelta && !record->m_broke_lc)
 		return true;
 
 	// the next update will come in, wait for it.
@@ -94,10 +112,10 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 			prevdir = math::rad_to_deg(std::atan2(data->m_records[1]->m_velocity.y, data->m_records[1]->m_velocity.x));
 
 		// compute the direction change per tick.
-		change = (math::NormalizedAngle(dir - prevdir) / dt) * g_csgo.m_globals->m_interval;
+		change = math::NormalizedAngle(dir - prevdir) / game::TIME_TO_TICKS(dt);
 	}
 
-	if (std::abs(change) > 6.f)
+	if (std::abs(change) > 45.f)
 		change = 0.f;
 
 	// get the pointer to the players animation state.
@@ -142,7 +160,7 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 
 		// see if by predicting this amount of lag
 		// we do not break stuff.
-		next += lag;
+		next += std::min(lag, 8);
 		if (next >= g_cl.m_arrival_tick)
 			break;
 
@@ -181,7 +199,8 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 				}
 
 				// assume the player is bunnyhopping here so set the upwards impulse.
-				record->m_pred_velocity.z = g_csgo.sv_jump_impulse->GetFloat();
+				if (record->m_pred_velocity.z <= 0.f)
+					record->m_pred_velocity.z = g_csgo.sv_jump_impulse->GetFloat();
 			}
 
 			// we are not on the ground
@@ -251,55 +270,58 @@ bool LagCompensation::StartPrediction(AimPlayer* data) {
 }
 
 void LagCompensation::PlayerMove(LagRecord* record) {
-	vec3_t                start, end, normal;
+	vec3_t                start, end;
 	CGameTrace            trace;
 	CTraceFilterWorldOnly filter;
 
-	// define trace start.
 	start = record->m_pred_origin;
-
-	// move trace end one tick into the future using predicted velocity.
 	end = start + (record->m_pred_velocity * g_csgo.m_globals->m_interval);
 
-	// trace.
-	g_csgo.m_engine_trace->TraceRay(Ray(start, end, record->m_mins, record->m_maxs), CONTENTS_SOLID, &filter, &trace);
+	g_csgo.m_engine_trace->TraceRay(
+		Ray(start, end, record->m_mins, record->m_maxs),
+		CONTENTS_SOLID, &filter, &trace
+	);
 
-	// we hit shit
-	// we need to fix hit.
+	// handle collision
 	if (trace.m_fraction != 1.f) {
+		for (int i = 0; i < 4; ++i) { // was 2 → increase for stability
+			// slide along plane
+			float dot = record->m_pred_velocity.dot(trace.m_plane.m_normal);
+			record->m_pred_velocity -= trace.m_plane.m_normal * dot;
 
-		// fix sliding on planes.
-		for (int i{}; i < 2; ++i) {
-			record->m_pred_velocity -= trace.m_plane.m_normal * record->m_pred_velocity.dot(trace.m_plane.m_normal);
-
-			float adjust = record->m_pred_velocity.dot(trace.m_plane.m_normal);
-			if (adjust < 0.f)
-				record->m_pred_velocity -= (trace.m_plane.m_normal * adjust);
+			// kill tiny movement (prevents jitter)
+			if (record->m_pred_velocity.length_sqr() < 1.f)
+				record->m_pred_velocity = vec3_t{};
 
 			start = trace.m_endpos;
-			end = start + (record->m_pred_velocity * (g_csgo.m_globals->m_interval * (1.f - trace.m_fraction)));
+			end = start + record->m_pred_velocity * (g_csgo.m_globals->m_interval * (1.f - trace.m_fraction));
 
-			g_csgo.m_engine_trace->TraceRay(Ray(start, end, record->m_mins, record->m_maxs), CONTENTS_SOLID, &filter, &trace);
+			g_csgo.m_engine_trace->TraceRay(
+				Ray(start, end, record->m_mins, record->m_maxs),
+				CONTENTS_SOLID, &filter, &trace
+			);
+
 			if (trace.m_fraction == 1.f)
 				break;
 		}
 	}
 
-	// set new final origin.
-	start = end = record->m_pred_origin = trace.m_endpos;
+	// set final origin directly from trace (more accurate)
+	record->m_pred_origin = trace.m_endpos;
 
-	// move endpos 2 units down.
-	// this way we can check if we are in/on the ground.
+	// ===== GROUND CHECK =====
+	start = record->m_pred_origin;
+	end = start;
 	end.z -= 2.f;
 
-	// trace.
-	g_csgo.m_engine_trace->TraceRay(Ray(start, end, record->m_mins, record->m_maxs), CONTENTS_SOLID, &filter, &trace);
+	g_csgo.m_engine_trace->TraceRay(
+		Ray(start, end, record->m_mins, record->m_maxs),
+		CONTENTS_SOLID, &filter, &trace
+	);
 
-	// strip onground flag.
 	record->m_pred_flags &= ~FL_ONGROUND;
 
-	// add back onground flag if we are onground.
-	if (trace.m_fraction != 1.f && trace.m_plane.m_normal.z > 0.7f)
+	if (trace.m_fraction < 1.f && trace.m_plane.m_normal.z > 0.7f)
 		record->m_pred_flags |= FL_ONGROUND;
 }
 

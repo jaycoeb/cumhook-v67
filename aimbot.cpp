@@ -64,7 +64,7 @@ void AimPlayer::UpdateAnimations(LagRecord* record) {
 		// detect fakewalk.
 		float speed = record->m_velocity.length();
 
-		if (record->m_flags & FL_ONGROUND && record->m_layers[6].m_weight == 0.f && speed > 0.1f && speed < 100.f)
+		if ((record->m_flags & FL_ONGROUND) && speed > 0.1f && speed < 80.f && record->m_lag > 2)
 			record->m_fake_walk = true;
 
 		if (record->m_fake_walk)
@@ -110,6 +110,10 @@ void AimPlayer::UpdateAnimations(LagRecord* record) {
 				// get the duckamt change per tick.
 				float change = (duck / time) * g_csgo.m_globals->m_interval;
 
+				if (time > 0.f) {
+					float change = (duck / time) * g_csgo.m_globals->m_interval;
+					m_player->m_flDuckAmount() = previous->m_duck + change;
+				}
 				// fix crouching players.
 				m_player->m_flDuckAmount() = previous->m_duck + change;
 
@@ -119,6 +123,11 @@ void AimPlayer::UpdateAnimations(LagRecord* record) {
 
 					// accel per tick.
 					vec3_t accel = (velo / time) * g_csgo.m_globals->m_interval;
+
+					if (time > 0.f) {
+						vec3_t accel = (velo / time) * g_csgo.m_globals->m_interval;
+						record->m_anim_velocity = previous->m_velocity + accel;
+					}
 
 					// set the anim velocity to the previous velocity.
 					// and predict one tick ahead.
@@ -167,7 +176,8 @@ void AimPlayer::UpdateAnimations(LagRecord* record) {
 		g_resolver.ResolveAngles(m_player, record);
 
 	// set stuff before animating.
-	m_player->m_vecOrigin() = record->m_origin;
+	m_player->m_vecOrigin() = record->m_pred_origin;
+	m_player->SetAbsOrigin(record->m_pred_origin);
 	m_player->m_vecVelocity() = m_player->m_vecAbsVelocity() = record->m_anim_velocity;
 	m_player->m_flLowerBodyYawTarget() = record->m_body;
 
@@ -694,7 +704,7 @@ bool Aimbot::CheckHitchance(Player* player, const ang_t& angle) {
 			return true;
 
 		// we cant make it anymore.
-		if ((SEED_MAX - i + total_hits) < needed_hits)
+		if ((SEED_MAX - i + total_hits + 1) < needed_hits)
 			return false;
 	}
 
@@ -725,7 +735,7 @@ bool AimPlayer::SetupHitboxPoints(LagRecord* record, BoneArray* bones, int index
 	float scale = g_menu.main.aimbot.scale.get() / 100.f;
 
 	// big inair fix.
-	if (!(record->m_pred_flags) & FL_ONGROUND)
+	if (!(record->m_pred_flags & FL_ONGROUND))
 		scale = 0.7f;
 
 	float bscale = g_menu.main.aimbot.body_scale.get() / 100.f;

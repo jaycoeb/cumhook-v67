@@ -327,16 +327,14 @@ void Client::OnTick(CUserCmd *cmd) {
   // run all movement related code.
   DoMove();
 
-  // store stome additonal stuff for next tick
-  // sanetize our usercommand if needed and fix our movement.
+  // 🔥 RESTORE IMMEDIATELY AFTER PREDICTION
+  g_inputpred.restore();
+
+  // store stuff / animations
   EndMove(cmd);
 
   // restore the players.
   BackupPlayers(true);
-
-  // restore curtime/frametime
-  // and prediction seed/player.
-  g_inputpred.restore();
 }
 
 void Client::SetAngles() {
@@ -600,11 +598,24 @@ void Client::UpdateIncomingSequences() {
 }
 
 void Client::SetClantag() {
-  static int(__fastcall * clantag)(const char *, const char *);
-  if (!clantag)
-    clantag =
-        pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15"))
-            .as<int(__fastcall *)(const char *, const char *)>();
+    static int(__fastcall * clantag)(const char*, const char*);
+    if (!clantag) {
+        clantag = pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15"))
+            .as<int(__fastcall*)(const char*, const char*)>();
+    }
 
-  clantag("Cumhook", "Cumhook");
+    static std::string tag = "   Cumhook   ";
+    static int last_time = 0;
+    static size_t pos = 0;
+
+    // update every ~0.3s
+    int time = int(g_csgo.m_globals->m_curtime * 3.f);
+    if (time != last_time) {
+        last_time = time;
+
+        pos = (pos + 1) % tag.length();
+
+        std::string out = tag.substr(pos) + tag.substr(0, pos);
+        clantag(out.c_str(), out.c_str());
+    }
 }

@@ -20,78 +20,87 @@ bool Bones::setup( Player* player, BoneArray* out, LagRecord* record ) {
 	return true;
 }
 
-bool Bones::BuildBones( Player* target, int mask, BoneArray* out, LagRecord* record ) {
-	vec3_t		     pos[ 128 ];
-	quaternion_t     q[ 128 ];
-	vec3_t           backup_origin;
-	ang_t            backup_angles;
-	float            backup_poses[ 24 ];
-	C_AnimationLayer backup_layers[ 13 ];
+bool Bones::BuildBones(Player* target, int mask, BoneArray* out, LagRecord* record) {
+    if (!out)
+        return false;
 
-	// get hdr.
-	CStudioHdr* hdr = target->GetModelPtr( );
-	if( !hdr )
-		return false;
+    vec3_t         pos[128];
+    quaternion_t   q[128];
 
-	// get ptr to bone accessor.
-	CBoneAccessor* accessor = &target->m_BoneAccessor( );
-	if( !accessor )
-		return false;
+    vec3_t backup_origin;
+    ang_t  backup_angles;
+    float  backup_poses[24];
+    C_AnimationLayer backup_layers[13];
 
-	// store origial output matrix.
-	// likely cachedbonedata.
-	BoneArray* backup_matrix = accessor->m_pBones;
-	if( !backup_matrix )
-		return false;
+    vec3_t backup_velocity;
+    int    backup_flags;
+    int    backup_eflags;
 
-	// prevent the game from calling ShouldSkipAnimationFrame.
-	auto bSkipAnimationFrame = *reinterpret_cast< int* >( uintptr_t( target ) + 0x260 );
-	*reinterpret_cast< int* >( uintptr_t( target ) + 0x260 ) = NULL;
+    CStudioHdr* hdr = target->GetModelPtr();
+    if (!hdr)
+        return false;
 
-	// backup original.
-	backup_origin  = target->GetAbsOrigin( );
-	backup_angles  = target->GetAbsAngles( );
-	target->GetPoseParameters( backup_poses );
-	target->GetAnimLayers( backup_layers );
+    CBoneAccessor* accessor = &target->m_BoneAccessor();
+    if (!accessor)
+        return false;
 
-	// compute transform from raw data.
-	matrix3x4_t transform;
-	math::AngleMatrix( record->m_abs_ang, record->m_pred_origin, transform );
+    BoneArray* backup_matrix = accessor->m_pBones;
+    if (!backup_matrix)
+        return false;
 
-	// set non interpolated data.
-	target->AddEffect( EF_NOINTERP );
-	target->SetAbsOrigin( record->m_pred_origin );
-	target->SetAbsAngles( record->m_abs_ang );
-	target->SetPoseParameters( record->m_poses );
-	target->SetAnimLayers( record->m_layers );
+    auto bSkipAnimationFrame = *reinterpret_cast<int*>(uintptr_t(target) + 0x260);
+    *reinterpret_cast<int*>(uintptr_t(target) + 0x260) = NULL;
 
-	// force game to call AccumulateLayers - pvs fix.
-	m_running = true;
+    // backup
+    backup_origin = target->GetAbsOrigin();
+    backup_angles = target->GetAbsAngles();
+    backup_velocity = target->m_vecAbsVelocity();
+    backup_flags = target->m_fFlags();
+    backup_eflags = target->m_iEFlags();
 
-	// set bone array for write.
-	accessor->m_pBones = out;
+    target->GetPoseParameters(backup_poses);
+    target->GetAnimLayers(backup_layers);
 
-	// compute and build bones.
-	target->StandardBlendingRules( hdr, pos, q, record->m_pred_time, mask );
+    matrix3x4_t transform;
+    math::AngleMatrix(record->m_abs_ang, record->m_pred_origin, transform);
 
-	uint8_t computed[ 0x100 ];
-	std::memset( computed, 0, 0x100 );
-	target->BuildTransformations( hdr, pos, q, transform, mask, computed );
+    target->AddEffect(EF_NOINTERP);
 
-	// restore old matrix.
-	accessor->m_pBones = backup_matrix;
+    target->SetAbsOrigin(record->m_pred_origin);
+    target->SetAbsAngles(record->m_abs_ang);
 
-	// restore original interpolated entity data.
-	target->SetAbsOrigin( backup_origin );
-	target->SetAbsAngles( backup_angles );
-	target->SetPoseParameters( backup_poses );
-	target->SetAnimLayers( backup_layers );
+    target->m_vecAbsVelocity() = record->m_pred_velocity;
+    target->m_fFlags() = record->m_pred_flags;
 
-	// revert to old game behavior.
-	m_running = false;
+    target->m_iEFlags() &= ~0x1000;
 
-	// allow the game to call ShouldSkipAnimationFrame.
-	*reinterpret_cast< int* >( uintptr_t( target ) + 0x260 ) = bSkipAnimationFrame;
+    target->SetPoseParameters(record->m_poses);
+    target->SetAnimLayers(record->m_layers);
 
-	return true;
+    accessor->m_pBones = out;
+
+    m_running = true;
+
+    target->StandardBlendingRules(hdr, pos, q, record->m_pred_time, mask);
+
+    uint8_t computed[128] = {};
+    target->BuildTransformations(hdr, pos, q, transform, mask, computed);
+
+    accessor->m_pBones = backup_matrix;
+
+    // restore
+    target->SetAbsOrigin(backup_origin);
+    target->SetAbsAngles(backup_angles);
+    target->m_vecAbsVelocity() = backup_velocity;
+    target->m_fFlags() = backup_flags;
+    target->m_iEFlags() = backup_eflags;
+
+    target->SetPoseParameters(backup_poses);
+    target->SetAnimLayers(backup_layers);
+
+    m_running = false;
+
+    *reinterpret_cast<int*>(uintptr_t(target) + 0x260) = bSkipAnimationFrame;
+
+    return true;
 }

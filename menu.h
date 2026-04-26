@@ -33,8 +33,8 @@ public:
 	MultiDropdown baim2;
 	Slider        baim_hp;
 	Keybind       baim_key;
-	Checkbox	  Dubbletap$$$;
-	Keybind       DubbletapKey$$$;
+	Checkbox	  double_tap;
+	Keybind       double_tap_key;
 
 public:
 	void init() {
@@ -136,11 +136,11 @@ public:
 		baim_key.setup(XOR("body aim on key"), XOR("body aim on key"));
 		RegisterElement(&baim_key, 1);
 
-		Dubbletap$$$.setup(XOR("double tap"), XOR("double_tap"));
-		RegisterElement(&Dubbletap$$$, 1);
+		double_tap.setup(XOR("double tap"), XOR("double_tap"));
+		RegisterElement(&double_tap, 1);
 
-		DubbletapKey$$$.setup(XOR("double tap key"), XOR("double_tap_key"));
-		RegisterElement(&DubbletapKey$$$, 1);
+		double_tap_key.setup(XOR("double tap key"), XOR("double_tap_key"));
+		RegisterElement(&double_tap_key, 1);
 	}
 };
 
