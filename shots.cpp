@@ -285,7 +285,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 				switch ((rand() % 20) + 1) {
 
 				case 1:
-					g_csgo.m_engine->ExecuteClientCmd(XOR("say tapped by cumhook v420"));
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say tapped by cumhook v67"));
 					break;
 
 				case 2:
@@ -297,7 +297,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 					break;
 
 				case 4:
-					g_csgo.m_engine->ExecuteClientCmd(XOR("say omg cumhook v420 is so good"));
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say omg cumhook v67 is so good"));
 					break;
 
 				case 5:
@@ -321,7 +321,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 					break;
 
 				case 10:
-					g_csgo.m_engine->ExecuteClientCmd(XOR("say cumhook is now even more pasted ;)"));
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say cumhook is now even more pasted with the assistance of extremely advanced technologies"));
 					break;
 
 				case 11:

@@ -605,23 +605,48 @@ void Client::UpdateIncomingSequences() {
 }
 
 void Client::SetClantag() {
-    static int(__fastcall * clantag)(const char*, const char*);
-    if (!clantag) {
-        clantag = pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15"))
-            .as<int(__fastcall*)(const char*, const char*)>();
+    if (!g_csgo.m_engine->IsInGame())
+        return;
+
+    // lambda function for setting our clantag.
+    auto SetClanTag = [&](std::string tag) -> void {
+        using SetClanTag_t = int(__fastcall*)(const char*, const char*);
+        static auto SetClanTagFn = pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15")).as<SetClanTag_t>();
+
+        SetClanTagFn(tag.c_str(), XOR("cumhook"));
+        };
+
+    std::string szClanTag = XOR("       cumhook      ");
+    static int iPrevFrame = 0;
+    static bool bReset = false;
+    int iCurFrame = ((int)(g_csgo.m_globals->m_curtime * 2.7f)) % (szClanTag.size() * 2);
+
+    if (iPrevFrame != (int)(g_csgo.m_globals->m_curtime * 2.7f) % 18) {
+        switch (int(g_csgo.m_globals->m_curtime * 2.7f) % 18) {
+        case 0: SetClanTag(XOR("% ")); break;
+        case 1: SetClanTag(XOR("c ")); break;
+        case 2: SetClanTag(XOR("c* ")); break;
+        case 3: SetClanTag(XOR("cu ")); break;
+        case 4: SetClanTag(XOR("cu# ")); break;
+        case 5: SetClanTag(XOR("cum ")); break;
+        case 6: SetClanTag(XOR("cum& ")); break;
+        case 7: SetClanTag(XOR("cumh ")); break;
+        case 8: SetClanTag(XOR("cumh0 ")); break;
+        case 9: SetClanTag(XOR("cumho ")); break;
+        case 10:SetClanTag(XOR("cumho_ ")); break;
+        case 11:SetClanTag(XOR("cumhoo ")); break;
+        case 12:SetClanTag(XOR("cumhoo+ ")); break;
+        case 13:SetClanTag(XOR("cumhook ")); break;
+        case 14:SetClanTag(XOR("cumhook v67 ")); break;
+        case 15:SetClanTag(XOR("cumhook ")); break;
+        case 16:SetClanTag(XOR("cumhook v67")); break;
+        case 17:SetClanTag(XOR("cumhook ")); break;
+        }
+
+        // set current/last frame.
+        iPrevFrame = (int)(g_csgo.m_globals->m_curtime * 2.7f) % 21;
     }
 
-    static std::string tag = "   Cumhook   ";
-    static int last_time = 0;
-    static size_t pos = 0;
-
-    // update every ~0.3s
-    int time = int(g_csgo.m_globals->m_curtime * 3.f);
-    if (time != last_time) {
-        last_time = time;
-
-        pos = (pos + 1) % tag.length();
-
-        clantag("Cumhook", "Cumhook");
-    }
+    // do we want to reset after untoggling the clantag?
+    bReset = true;
 }
