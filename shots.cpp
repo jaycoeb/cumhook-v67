@@ -361,7 +361,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 					break;
 
 				case 20:
-					g_csgo.m_engine->ExecuteClientCmd(XOR("say koen is handsome asf"));
+					g_csgo.m_engine->ExecuteClientCmd(XOR("say say"));
 					break;
 				}
 			
