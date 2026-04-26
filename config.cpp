@@ -32,7 +32,7 @@ void Config::LoadHotkeys( ) {
 	std::string file{ m_path };
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.sup" ) );
+	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.cum67" ) );
 
 	// construct incoming file stream.
 	std::ifstream in{ file };
@@ -71,7 +71,7 @@ void Config::SaveHotkeys( ) {
 	std::string file{ m_path };
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.sup" ) );
+	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.cum67" ) );
 
 	// construct outgoing file stream.
 	std::ofstream stream{ file };

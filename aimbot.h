@@ -66,6 +66,18 @@ public:
 	float m_body;
 	float m_old_body;
 
+	struct ResolveHistory {
+		float last_angle = 0.f;
+
+		int miss_bruteforce = 0;
+		int miss_side = 0;
+		int miss_invert = 0;
+
+		float last_hit_angle = 0.f;
+	};
+
+	ResolveHistory m_resolve_history;
+
 	//std::deque< float >            m_lbyt_update;
 	//std::deque< float >			   m_prefer_stand;
 	//std::deque< float >            m_prefer_air;

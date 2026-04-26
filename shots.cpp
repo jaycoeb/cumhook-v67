@@ -2,6 +2,18 @@
 
 Shots g_shots{ };
 
+static const char* ResolveModeToString(size_t mode) {
+	switch (mode) {
+	case Resolver::Modes::RESOLVE_NONE:  return "NONE";
+	case Resolver::Modes::RESOLVE_WALK:  return "WALK";
+	case Resolver::Modes::RESOLVE_STAND: return "STAND";
+	case Resolver::Modes::RESOLVE_STAND2:return "STAND2";
+	case Resolver::Modes::RESOLVE_AIR:   return "AIR";
+	case Resolver::Modes::RESOLVE_BODY:  return "BODY";
+	default:                             return "UNKNOWN";
+	}
+}
+
 void Shots::OnShotFire( Player *target, float damage, int bullets, LagRecord *record ) {
 
 	// iterate all bullets in this shot.
@@ -189,6 +201,29 @@ void Shots::OnImpact( IGameEvent *evt ) {
 			++data->m_stand_index2;
 
 		++data->m_missed_shots;
+
+		float shot_yaw = shot->m_record->m_eye_angles.y;
+		float body_yaw = shot->m_record->m_body;
+		float delta = math::NormalizedAngle(shot_yaw - body_yaw);
+
+		const char* mode_str = ResolveModeToString(mode);
+
+		g_csgo.m_cvar->ConsoleColorPrintf(
+			{ 255, 100, 100, 255 },
+			"[cumhook] MISS | mode: %s | yaw: %.1f | body: %.1f | delta: %.1f\n",
+			mode_str,
+			shot_yaw,
+			body_yaw,
+			delta
+		);
+
+		g_csgo.m_cvar->ConsoleColorPrintf(
+			{ 255, 100, 100, 255 },
+			"missed_shots: %d | stand_index: %d | body_index: %d\n",
+			data->m_missed_shots,
+			data->m_stand_index,
+			data->m_body_index
+		);
 	}
 
 	// restore player to his original state.
@@ -403,10 +438,24 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	if ( !data )
 		return;
 
-	// we hit, reset missed shots counter.
+	// we hit (impossible were using cumhook), reset missed shots counter.
 	data->m_missed_shots = 0;
 
+	float shot_yaw = impact->m_shot->m_record->m_eye_angles.y;
+	float body_yaw = impact->m_shot->m_record->m_body;
+	float delta = math::NormalizedAngle(shot_yaw - body_yaw);
+
 	size_t mode = impact->m_shot->m_record->m_mode;
+	const char* mode_str = ResolveModeToString(mode);
+
+	g_csgo.m_cvar->ConsoleColorPrintf(
+		{ 100, 255, 100, 255 },
+		"[cumhook] HIT | mode: %s | yaw: %.1f | body: %.1f | delta: %.1f\n",
+		mode_str,
+		shot_yaw,
+		body_yaw,
+		delta
+	);
 
 	// if we miss a shot on body update.
 	// we can chose to stop shooting at them.

@@ -1,56 +1,6 @@
 #include "includes.h"
 #include <numeric>
 
-static float pred_foot_delta(const std::deque<std::shared_ptr<LagRecord>>& records) {
-    constexpr float MAX_DELTA_THRESHOLD = 35.0f;
-    constexpr float PREDICTION_OFFSET = 60.0f;
-
-    if (records.size() < 3)
-        return 0.0f;
-
-    float max_abs_delta = 0.0f;
-    float sign = 1.0f;
-
-    for (size_t i = 1; i < records.size(); ++i) {
-        const float delta = math::NormalizedAngle(records[i]->m_body - records[i - 1]->m_body);
-
-        if (fabsf(delta) > fabsf(max_abs_delta)) {
-            max_abs_delta = delta;
-            sign = (delta >= 0.f) ? 1.f : -1.f;
-        }
-    }
-
-    if (fabsf(max_abs_delta) > MAX_DELTA_THRESHOLD) {
-        return -sign * PREDICTION_OFFSET;
-    }
-
-    return 0.0f;
-}
-
-static float curvature_heuristic(const std::deque<std::shared_ptr<LagRecord>>& records) {
-    if (records.size() < 4)
-        return 0.0f;
-
-    float curvature = 0.0f;
-    float prev_velocity = 0.0f;
-
-    for (size_t i = 1; i < records.size(); ++i) {
-        const float dyaw = math::NormalizedAngle(records[i]->m_body - records[i - 1]->m_body);
-        const float dt = records[i]->m_anim_time - records[i - 1]->m_anim_time;
-
-        if (dt <= 0.0f)
-            continue;
-
-        const float velocity = dyaw / dt;
-        if (i > 1)
-            curvature += velocity - prev_velocity;
-
-        prev_velocity = velocity;
-    }
-
-    return curvature;
-}
-
 static float pred_foot_yaw(const LagRecord& a, const LagRecord& b, float predicted_offset) {
     constexpr float foot_speed = 80.0f;
 
@@ -78,6 +28,221 @@ static float pred_foot_yaw(const LagRecord& a, const LagRecord& b, float predict
     }
 
     return math::NormalizedAngle(resolved);
+}
+
+static float pred_foot_delta(const std::deque<std::shared_ptr<LagRecord>>& records) {
+    constexpr float MAX_DELTA_THRESHOLD = 35.0f;
+
+    if (records.size() < 3)
+        return 0.0f;
+
+    float max_abs_delta = 0.0f;
+    float sign = 1.0f;
+
+    for (size_t i = 1; i < records.size(); ++i) {
+        float delta = math::NormalizedAngle(records[i]->m_body - records[i - 1]->m_body);
+
+        if (fabsf(delta) > fabsf(max_abs_delta)) {
+            max_abs_delta = delta;
+            sign = (delta >= 0.f) ? 1.f : -1.f;
+        }
+    }
+
+    if (fabsf(max_abs_delta) > MAX_DELTA_THRESHOLD) {
+        // dynamic scale instead of fixed 60
+        float scaled = fabsf(max_abs_delta) * 2.0f;
+
+        // manual clamp (no std::clamp needed)
+        if (scaled < 30.f) scaled = 30.f;
+        if (scaled > 180.f) scaled = 180.f;
+
+        return -sign * scaled;
+    }
+
+    return 0.0f;
+}
+
+static float curvature_heuristic(const std::deque<std::shared_ptr<LagRecord>>& records) {
+    if (records.size() < 4)
+        return 0.f;
+
+    float total = 0.f;
+    float prev_vel = 0.f;
+    bool has_prev = false;
+
+    // iterate recent records (keep it tight, last ~4–6)
+    int count = std::min((int)records.size(), 6);
+
+    for (int i = 1; i < count; ++i) {
+        const auto& curr = records[i];
+        const auto& prev = records[i - 1];
+
+        float dt = curr->m_anim_time - prev->m_anim_time;
+        if (dt <= 0.f)
+            continue;
+
+        // yaw delta per second (angular velocity)
+        float dyaw = math::NormalizedAngle(curr->m_body - prev->m_body);
+        float vel = dyaw / dt;
+
+        if (has_prev) {
+            // acceleration (change in angular velocity)
+            total += (vel - prev_vel);
+        }
+
+        prev_vel = vel;
+        has_prev = true;
+    }
+
+    // average it slightly so it’s not noisy
+    return total / (float)(count - 1);
+}
+
+static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
+    float score = 0.f;
+
+    float body = record->m_body;
+
+    // --------------------------------------------------
+    // 1. LBY proximity (core for 2018)
+    // --------------------------------------------------
+    float lby_delta = fabsf(math::NormalizedAngle(yaw - body));
+    score += (180.f - lby_delta) * 1.5f;
+
+    // --------------------------------------------------
+    // 2. movement direction
+    // --------------------------------------------------
+    if (record->m_velocity.length_2d() > 20.f) {
+        float move_dir = math::rad_to_deg(std::atan2(
+            record->m_velocity.y,
+            record->m_velocity.x
+        ));
+
+        float move_delta = fabsf(math::NormalizedAngle(yaw - move_dir));
+        score += (180.f - move_delta) * 0.4f;
+    }
+
+    // --------------------------------------------------
+    // 3. previous resolved stability
+    // --------------------------------------------------
+    if (!data->m_records.empty()) {
+        float prev = data->m_resolve_history.last_angle;
+        float delta = fabsf(math::NormalizedAngle(yaw - prev));
+
+        score += (180.f - delta) * 0.25f;
+    }
+
+    // --------------------------------------------------
+    // 4. trusted LBY boost
+    // --------------------------------------------------
+    if (data->m_trusted_lby_time > 0.f) {
+        float dt = record->m_anim_time - data->m_trusted_lby_time;
+
+        if (dt < 1.1f) {
+            float delta = fabsf(math::NormalizedAngle(yaw - data->m_trusted_lby));
+            score += (180.f - delta) * 2.0f;
+        }
+    }
+
+    // ==================================================
+    // 🔥 5. MISS ADAPTATION (THIS IS THE GAME CHANGER)
+    // ==================================================
+
+    float delta = math::NormalizedAngle(yaw - body);
+
+    // missed center → stop picking center
+    if (data->m_resolve_history.miss_bruteforce > 0) {
+        if (fabsf(delta) < 20.f)
+            score -= 50.f;
+    }
+
+    // missed right side → boost LEFT
+    if (data->m_resolve_history.miss_side > 0) {
+        if (delta > 0.f)   // right side
+            score -= 40.f;
+        else
+            score += 25.f;
+    }
+
+    // missed left side → boost RIGHT
+    if (data->m_resolve_history.miss_invert > 0) {
+        if (delta < 0.f)
+            score -= 40.f;
+        else
+            score += 25.f;
+    }
+
+    // heavy misses → force opposite brute
+    int total_misses =
+        data->m_resolve_history.miss_side +
+        data->m_resolve_history.miss_invert +
+        data->m_resolve_history.miss_bruteforce;
+
+    if (total_misses >= 3) {
+        if (fabsf(delta) > 140.f) // opposite side
+            score += 35.f;
+    }
+
+    return score;
+}
+
+static float SelectBestYaw(AimPlayer* data, LagRecord* record) {
+    std::vector<Resolver::ResolveCandidate> candidates;
+
+    float body = record->m_body;
+    float away = g_resolver.GetAwayAngle(record);
+
+    // --------------------------------------------------
+    // core angles (2018 meta)
+    // --------------------------------------------------
+    candidates.push_back({ body, 0.f });
+    candidates.push_back({ body + 180.f, 0.f });
+    candidates.push_back({ body + 90.f, 0.f });
+    candidates.push_back({ body - 90.f, 0.f });
+
+    candidates.push_back({ away + 180.f, 0.f });
+    candidates.push_back({ away + 90.f, 0.f });
+    candidates.push_back({ away - 90.f, 0.f });
+
+    // --------------------------------------------------
+    // foot prediction (if available)
+    // --------------------------------------------------
+    if (data->m_records.size() >= 2) {
+        const auto& a = *data->m_records[data->m_records.size() - 2];
+        const auto& b = *data->m_records[data->m_records.size() - 1];
+
+        float offset = pred_foot_delta(data->m_records);
+        float scaled = std::clamp(offset * 3.f, -180.f, 180.f);
+
+        float foot = pred_foot_yaw(a, b, scaled);
+        candidates.push_back({ foot, 0.f });
+    }
+
+    // --------------------------------------------------
+    // curvature
+    // --------------------------------------------------
+    if (data->m_records.size() >= 4) {
+        float curv = curvature_heuristic(data->m_records);
+        candidates.push_back({ body + curv, 0.f });
+    }
+
+    // --------------------------------------------------
+    // score all
+    // --------------------------------------------------
+    float best_score = -FLT_MAX;
+    float best_yaw = body;
+
+    for (auto& c : candidates) {
+        c.yaw = math::NormalizedAngle(c.yaw);
+        c.score = ScoreYaw(data, record, c.yaw);
+
+        if (c.score > best_score) {
+            best_score = c.score;
+            best_yaw = c.yaw;
+        }
+    }
+
+    return best_yaw;
 }
 
 static bool lby_spam(const LagRecord& curr, const LagRecord& prev) {
@@ -241,97 +406,56 @@ void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
 
 	// normalize the eye angles, doesn't really matter but its clean.
 	math::NormalizeAngle( record->m_eye_angles.y );
+
+    data->m_resolve_history.last_angle = record->m_eye_angles.y;
 }
 
 float Resolver::CalculateStand(AimPlayer* data, LagRecord* record, LagRecord* prev, CCSGOPlayerAnimState* state) {
     if (!data || !record || !prev)
-        return record ? record->m_body : 0.0f;
+        return record ? record->m_body : 0.f;
 
+    float confidence = ComputeConfidence(data);
+
+    // 🔒 LOW CONFIDENCE → NEVER PREDICT
+    if (confidence < 0.4f) {
+        return math::NormalizedAngle(record->m_body + 180.f);
+    }
+
+    // ✅ TRUST LBY SNAP FIRST
     const auto& adjust = record->m_layers[3];
     const auto& prev_adjust = prev->m_layers[3];
-    const float anim_dt = record->m_anim_time - prev->m_anim_time;
 
-    constexpr float ADJUST_SEQUENCE_979 = 979;
-    constexpr float ADJUST_SEQUENCE_978 = 978;
-    constexpr float CYCLE_RESET_THRESHOLD = 0.8f;
-    constexpr float CYCLE_LOW_THRESHOLD = 0.2f;
-    constexpr float WEIGHT_SPIKE_THRESHOLD = 0.45f;
-    constexpr float WEIGHT_THRESHOLD = 0.9f;
-    constexpr float CURVATURE_THRESHOLD = 35.0f;
-    constexpr float IDLE_WEIGHT_THRESHOLD = 0.01f;
-    constexpr float IDLE_CYCLE_THRESHOLD = 0.001f;
-    constexpr float FOOT_TURN_THRESHOLD = 120.0f;
-    constexpr float FOOT_ALIGN_THRESHOLD = 5.0f;
-    constexpr float FOOT_CYCLE_THRESHOLD = 0.2f;
-    constexpr float ABS_YAW_THRESHOLD = 58.f;
-    constexpr float BODY_YAW_THRESHOLD = 5.f;
+    if ((adjust.m_sequence == 979 || adjust.m_sequence == 978)) {
+        bool reset = prev_adjust.m_cycle > 0.8f && adjust.m_cycle < 0.2f;
+        bool spike = (adjust.m_weight - prev_adjust.m_weight > 0.45f) && adjust.m_weight > 0.9f;
 
-    // Check for LBY snap
-    if (adjust.m_sequence == ADJUST_SEQUENCE_979 || adjust.m_sequence == ADJUST_SEQUENCE_978) {
-        const bool cycle_reset = prev_adjust.m_cycle > CYCLE_RESET_THRESHOLD && adjust.m_cycle < CYCLE_LOW_THRESHOLD;
-        const bool weight_spike = (adjust.m_weight - prev_adjust.m_weight > WEIGHT_SPIKE_THRESHOLD) && (adjust.m_weight > WEIGHT_THRESHOLD);
-
-        if (cycle_reset && weight_spike) {
+        if (reset && spike)
             return record->m_body;
+    }
+
+    // 🔒 ONLY USE FOOT DELTA IF STABLE
+    if (confidence > 0.6f && data->m_records.size() >= 3) {
+        float offset = pred_foot_delta(data->m_records);
+
+        if (fabsf(offset) > 1.0f)
+            return math::NormalizedAngle(record->m_body + offset);
+    }
+
+    // 🔒 REMOVE CURVATURE (too unstable)
+    // (yes, completely remove it)
+
+    // 🔒 CLAMP USING DESYNC LIMIT
+    if (state) {
+        float max_desync = state->m_fl_aim_yaw_max;
+        float delta = math::NormalizedAngle(record->m_body - prev->m_body);
+
+        if (fabsf(delta) > max_desync - 1.f) {
+            return math::NormalizedAngle(record->m_body + (delta > 0 ? max_desync : -max_desync));
         }
     }
 
-    // Check for high curvature
-    if (data->m_records.size() >= 4) {
-        float curvature = curvature_heuristic(data->m_records);
-        if (fabsf(curvature) > CURVATURE_THRESHOLD) {
-            return math::NormalizedAngle(record->m_body + curvature);
-        }
-    }
-
-    // Check for idle animation
-    if (adjust.m_weight < IDLE_WEIGHT_THRESHOLD && fabsf(adjust.m_cycle - prev_adjust.m_cycle) < IDLE_CYCLE_THRESHOLD) {
-        return math::NormalizedAngle(record->m_body + 180.0f);
-    }
-
-    // Predict foot delta for small deltas
-    if (data->m_records.size() >= 3) {
-        const float pred_offset = pred_foot_delta(data->m_records);
-        return math::NormalizedAngle(record->m_body + pred_offset);
-    }
-
-    // Check clamp based on max desync
-    const float max_desync = state->m_fl_aim_yaw_max;
-    const float body_delta = math::NormalizedAngle(record->m_body - prev->m_body);
-
-    const bool clamp_l = body_delta < -max_desync + 0.1f;
-    const bool clamp_r = body_delta > max_desync - 0.1f;
-
-    if (clamp_l || clamp_r) {
-        const float invert = clamp_l ? -max_desync : max_desync;
-        return math::NormalizedAngle(record->m_body + invert);
-    }
-
-    // Check for fast foot yaw turns
-    const int act = data->m_player->GetSequenceActivity(record->m_layers[6].m_sequence);
-    if (act == 980 && anim_dt > 0.0f) {
-        const float foot_yaw_prev = prev->m_abs_ang.y;
-        const float foot_yaw_now = record->m_abs_ang.y;
-        const float yaw_delta = math::NormalizedAngle(foot_yaw_now - foot_yaw_prev);
-        const float yaw_speed = fabsf(yaw_delta / anim_dt);
-
-        const bool fast_turn = yaw_speed > FOOT_TURN_THRESHOLD;
-        const bool snapped_to_body = fabsf(math::NormalizedAngle(foot_yaw_now - record->m_body)) < FOOT_ALIGN_THRESHOLD;
-
-        if (fast_turn && snapped_to_body && adjust.m_cycle < FOOT_CYCLE_THRESHOLD) {
-            return record->m_body;
-        }
-    }
-
-    // Check for large absolute yaw with small body delta
-    const float abs_yaw_delta = fabsf(math::NormalizedAngle(record->m_abs_ang.y - prev->m_abs_ang.y));
-    const float body_yaw_delta = fabsf(math::NormalizedAngle(record->m_body - prev->m_body));
-
-    if (abs_yaw_delta > ABS_YAW_THRESHOLD && body_yaw_delta < BODY_YAW_THRESHOLD) {
-        return math::NormalizedAngle(record->m_body + 180.0f);
-    }
-
-    return math::NormalizedAngle(prev->m_eye_angles.y + body_delta);
+    // fallback = safest
+    return math::NormalizedAngle(record->m_body + 180.f);
 }
 
 void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
@@ -351,248 +475,109 @@ void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
 	std::memcpy( &data->m_walk_record, record, sizeof( LagRecord ) );
 }
 
+//chatgpt FINAL FORM $$$
 void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimState* state) {
-    // for no-spread call a seperate resolver.
+    if (!data || !record)
+        return;
+
     if (g_menu.main.config.mode.get() == 1) {
         StandNS(data, record);
         return;
     }
 
-    float away = GetAwayAngle(record);
-    LagRecord* move = &data->m_walk_record;
     LagRecord* prev = FindPreviousRecord(data);
+    float away = GetAwayAngle(record);
 
-    C_AnimationLayer* adjust = &record->m_layers[3];
+    float final_yaw = record->m_body; // default fallback
 
-    // hhh, lil paste
-    if (move->m_sim_time > 0.f) {
-        vec3_t delta = move->m_origin - record->m_origin;
-        if (delta.length() <= 128.f) {
-            data->m_moved = true;
-        }
-    }
-
-    int act = data->m_player->GetSequenceActivity(adjust->m_sequence);
+    // =========================================================
+    // STEP 1: HARD LBY SNAP (ONLY TRUE HARD OVERRIDE)
+    // =========================================================
     if (prev) {
-        const auto& prev_adjust = prev->m_layers[3];
+        float delta = fabsf(math::NormalizedAngle(record->m_body - prev->m_body));
 
-        const bool adjust_sequence_valid =
-            adjust->m_sequence == 979 || adjust->m_sequence == 978;
-
-        const bool adjust_reset =
-            prev_adjust.m_cycle > 0.8f && adjust->m_cycle < 0.2f;
-
-        const bool weight_spike =
-            (adjust->m_weight - prev_adjust.m_weight > 0.45f) &&
-            (adjust->m_weight > 0.9f);
-
-        const bool lby_snap = adjust_sequence_valid && adjust_reset && weight_spike;
-
-        if (lby_snap) {
+        if (delta > 35.f) {
             data->m_trusted_lby = record->m_body;
             data->m_trusted_lby_time = record->m_anim_time;
+
             record->m_eye_angles.y = record->m_body;
-            return;
+            return; // ONLY hard return allowed
         }
     }
 
-    const auto& curr_idle = record->m_layers[11];
-    float delta_cycle = 0.0f;
-    float delta_playback = 0.0f;
+    // =========================================================
+    // STEP 2: BUILD CANDIDATE BASE
+    // =========================================================
+    std::vector<float> candidates;
 
-    if (prev) {
-        const auto& prev_idle = prev->m_layers[11];
-        delta_cycle = fabsf(curr_idle.m_cycle - prev_idle.m_cycle);
-        delta_playback = fabsf(curr_idle.m_playback_rate - prev_idle.m_playback_rate);
+    float body = record->m_body;
 
-        constexpr float FAKE_IDLE_CYCLE_THRESHOLD = 0.01f;
-        constexpr float FAKE_IDLE_PLAYBACK_THRESHOLD = 0.005f;
-        constexpr int FAKE_IDLE_TICK_LIMIT = 2;
+    candidates.push_back(body);
+    candidates.push_back(body + 180.f);
+    candidates.push_back(body + 90.f);
+    candidates.push_back(body - 90.f);
 
-        if (curr_idle.m_sequence == 979 && prev_idle.m_sequence == 979) {
-            if (delta_cycle < FAKE_IDLE_CYCLE_THRESHOLD && delta_playback < FAKE_IDLE_PLAYBACK_THRESHOLD)
-                data->m_fake_idle_ticks++;
-            else
-                data->m_fake_idle_ticks = 0;
+    candidates.push_back(away + 180.f);
+    candidates.push_back(away + 90.f);
+    candidates.push_back(away - 90.f);
 
-            if (data->m_fake_idle_ticks > FAKE_IDLE_TICK_LIMIT) {
-                record->m_eye_angles.y = GetAwayAngle(record) + 180.f;
-                return;
-            }
-        }
-    }
-
-    if (act == 980 && prev) {
-        const float last_foot_yaw = prev->m_abs_ang.y;
-        const float curr_foot_yaw = record->m_abs_ang.y;
-        const float dt = record->m_anim_time - prev->m_anim_time;
-
-        if (dt > 0.0f) {
-            float yaw_delta = math::NormalizedAngle(curr_foot_yaw - last_foot_yaw);
-            float yaw_speed = fabsf(yaw_delta / dt);
-
-            constexpr float FAST_TURN_THRESHOLD = 120.0f;
-            constexpr float ALIGN_THRESHOLD = 5.0f;
-            constexpr float ADJUST_CYCLE_THRESHOLD = 0.2f;
-            constexpr float ADJUST_WEIGHT_THRESHOLD = 0.9f;
-
-            const bool turned_fast = yaw_speed > FAST_TURN_THRESHOLD;
-            const bool aligned_with_body = fabsf(math::NormalizedAngle(curr_foot_yaw - record->m_body)) < ALIGN_THRESHOLD;
-            const bool adjust_cycle_low = adjust->m_cycle < ADJUST_CYCLE_THRESHOLD && adjust->m_weight > ADJUST_WEIGHT_THRESHOLD;
-
-            if (turned_fast && aligned_with_body && adjust_cycle_low) {
-                record->m_eye_angles.y = record->m_body;
-                return;
-            }
-        }
-    }
-
-    if (data->m_moved) {
-        float delta = record->m_anim_time - move->m_anim_time;
-        constexpr float MOVE_THRESHOLD = 0.22f;
-
-        if (delta < MOVE_THRESHOLD) {
-            record->m_eye_angles.y = move->m_body;
-            return;
-        }
-        else if (record->m_anim_time >= data->m_body_update) {
-            if (data->m_body_index <= 3) {
-                record->m_eye_angles.y = record->m_body;
-                data->m_body_update = record->m_anim_time + 1.1f;
-                return;
-            }
-
-            record->m_eye_angles.y = move->m_body;
-
-            if (!(data->m_stand_index % 3))
-                record->m_eye_angles.y += g_csgo.RandomFloat(-35.f, 35.f);
-
-            if (data->m_stand_index > 6 && act != 980)
-                record->m_eye_angles.y = move->m_body + 180.f;
-            else if (data->m_stand_index > 4 && act != 980)
-                record->m_eye_angles.y = away + 180.f;
-
-            return;
-        }
-    }
-
+    // =========================================================
+    // STEP 3: ADD FOOT PREDICTION (SAFE VERSION)
+    // =========================================================
     if (data->m_records.size() >= 2) {
         const auto& a = *data->m_records[data->m_records.size() - 2];
         const auto& b = *data->m_records[data->m_records.size() - 1];
 
-        float predicted_offset = pred_foot_delta(data->m_records);
-        constexpr float FOOT_DELTA_THRESHOLD = 1.0f;
+        float offset = pred_foot_delta(data->m_records);
+        float scaled = std::clamp(offset * 2.5f, -180.f, 180.f);
 
-        if (fabsf(predicted_offset) > FOOT_DELTA_THRESHOLD) {
-            record->m_eye_angles.y = pred_foot_yaw(a, b, predicted_offset);
-        }
-        else {
-            record->m_eye_angles.y = CalculateStand(data, record, prev, state);
-        }
-
-        return;
+        float foot = pred_foot_yaw(a, b, scaled);
+        candidates.push_back(foot);
     }
 
-    if (data->m_records.size() >= 4) {
-        float curvature = curvature_heuristic(data->m_records);
-        constexpr float CURVATURE_THRESHOLD = 40.0f;
+    // =========================================================
+    // STEP 4: ADD TRUSTED LBY (if recent)
+    // =========================================================
+    if (data->m_trusted_lby_time > 0.f) {
+        float dt = record->m_anim_time - data->m_trusted_lby_time;
 
-        if (fabsf(curvature) > CURVATURE_THRESHOLD) {
-            const auto& a = *data->m_records[data->m_records.size() - 2];
-            const auto& b = *data->m_records[data->m_records.size() - 1];
-
-            float predicted_offset = pred_foot_delta(data->m_records);
-            float predicted_yaw = pred_foot_yaw(a, b, predicted_offset);
-
-            record->m_eye_angles.y = predicted_yaw;
-            return;
+        if (dt < 1.1f) {
+            candidates.push_back(data->m_trusted_lby);
+            candidates.push_back(data->m_trusted_lby + 180.f);
         }
     }
 
-    {
-        if (state) {
-            const float foot_yaw = record->m_abs_ang.y;
-            const float width_factor = 1.0f;
-            const float yaw_max = state->m_fl_aim_yaw_max * width_factor;
-            const float yaw_min = state->m_fl_aim_yaw_min * width_factor;
+    // =========================================================
+    // STEP 5: MISS-BASED ADAPTATION (VERY IMPORTANT)
+    // =========================================================
+    if (data->m_resolve_history.miss_side > 0) {
+        candidates.push_back(body - 90.f);
+    }
 
-            const float dy = math::NormalizedAngle(record->m_body - foot_yaw);
-            float corrected_yaw = foot_yaw;
+    if (data->m_resolve_history.miss_invert > 0) {
+        candidates.push_back(body + 90.f);
+    }
 
-            constexpr float YAW_MATCH_TOLERANCE = 0.5f;
+    if (data->m_resolve_history.miss_bruteforce > 1) {
+        candidates.push_back(body + 180.f);
+    }
 
-            if (dy > yaw_max - YAW_MATCH_TOLERANCE && dy < yaw_max + YAW_MATCH_TOLERANCE) {
-                corrected_yaw = foot_yaw + yaw_max;
-                record->m_eye_angles.y = math::NormalizedAngle(corrected_yaw);
-                return;
-            }
-            else if (dy < yaw_min + YAW_MATCH_TOLERANCE && dy > yaw_min - YAW_MATCH_TOLERANCE) {
-                corrected_yaw = foot_yaw + yaw_min;
-                record->m_eye_angles.y = math::NormalizedAngle(corrected_yaw);
-                return;
-            }
+    // =========================================================
+    // STEP 6: SCORE EVERYTHING
+    // =========================================================
+    float best_score = -FLT_MAX;
+
+    for (float yaw : candidates) {
+        float norm = math::NormalizedAngle(yaw);
+        float score = ScoreYaw(data, record, norm);
+
+        if (score > best_score) {
+            best_score = score;
+            final_yaw = norm;
         }
     }
 
-    if (data->m_records.size() >= 2) {
-        const auto& prev_rec = *data->m_records[data->m_records.size() - 2].get();
-        const auto& curr_rec = *data->m_records[data->m_records.size() - 1].get();
-
-        if (lby_spam(curr_rec, prev_rec)) {
-            record->m_eye_angles.y = math::NormalizedAngle(prev_rec.m_body + 180.f);
-            return;
-        }
-    }
-
-    const auto& layer0 = record->m_layers[0];
-    const float body = record->m_body;
-    const float away_normal = away;
-    const float fl_weight = adjust->m_weight;
-    const float fl_cycle = adjust->m_cycle;
-
-    bool is_adjust = act == 980;
-    bool is_mad = (fl_weight < 0.2f && fl_cycle > 0.01f && fl_cycle < 0.9f);
-    bool is_lol = (
-        layer0.m_playback_rate > 0.96f &&
-        layer0.m_cycle < 0.07f &&
-        prev && layer0.m_sequence == prev->m_layers[0].m_sequence &&
-        !is_adjust
-    );
-    bool is_fake_idle = (adjust->m_sequence == 979 && fl_cycle < 0.01f);
-
-    int index = data->m_stand_index2 % 6;
-
-    switch (index) {
-    case 0:
-        record->m_eye_angles.y = away_normal + 180.f;
-        break;
-
-    case 1:
-        record->m_eye_angles.y = body;
-        break;
-
-    case 2:
-        if (is_mad)
-            record->m_eye_angles.y = body + 70.f;
-        else
-            record->m_eye_angles.y = body + 110.f;
-        break;
-
-    case 3:
-        if (is_mad)
-            record->m_eye_angles.y = body - 70.f;
-        else
-            record->m_eye_angles.y = body - 110.f;
-        break;
-
-    case 4:
-        if (is_fake_idle || is_lol)
-            record->m_eye_angles.y = away_normal + g_csgo.RandomFloat(-25.f, 25.f);
-        else
-            record->m_eye_angles.y = away_normal + 180.f + g_csgo.RandomFloat(-20.f, 20.f);
-        break;
-    }
-
+    record->m_eye_angles.y = final_yaw;
     math::NormalizeAngle(record->m_eye_angles.y);
 }
 
@@ -737,4 +722,67 @@ void Resolver::ResolvePoses( Player* player, LagRecord* record ) {
 		// body_yaw
 		player->m_flPoseParameter( )[ 11 ] = g_csgo.RandomInt( 1, 3 ) * 0.25f;
 	}
+}
+
+float Resolver::ComputeConfidence(AimPlayer* data) {
+    if (data->m_records.size() < 2)
+        return 0.0f;
+
+    LagRecord* a = data->m_records[0].get();
+    LagRecord* b = data->m_records[1].get();
+
+    float dt = a->m_sim_time - b->m_sim_time;
+    float ideal = g_csgo.m_globals->m_interval;
+
+    float jitter = fabsf(dt - ideal);
+    float ratio = std::clamp(jitter / ideal, 0.f, 1.f);
+
+    float confidence = 1.f - ratio;
+
+    float dist = (a->m_origin - b->m_origin).length();
+    if (dist > 64.f)
+        confidence *= 0.5f;
+
+    return std::clamp(confidence, 0.1f, 1.f);
+}
+
+void Resolver::OnMiss(AimPlayer* data) {
+    float shot = data->m_resolve_history.last_angle;
+    float body = data->m_body;
+
+    float delta = math::NormalizedAngle(shot - body);
+
+    // categorize miss
+    if (fabsf(delta) < 20.f)
+        data->m_resolve_history.miss_bruteforce++;
+
+    else if (delta > 0.f)
+        data->m_resolve_history.miss_side++;     // right side missed
+
+    else
+        data->m_resolve_history.miss_invert++;   // left side missed
+}
+
+void Resolver::OnHit(AimPlayer* data) {
+    data->m_resolve_history.last_hit_angle =
+        data->m_resolve_history.last_angle;
+
+    // reset misses (important)
+    data->m_resolve_history.miss_bruteforce = 0;
+    data->m_resolve_history.miss_side = 0;
+    data->m_resolve_history.miss_invert = 0;
+}
+
+float Resolver::GetMaxDesyncDelta(CCSGOPlayerAnimState* state) {
+    if (!state)
+        return 60.f;
+
+    float yaw_max = state->m_fl_aim_yaw_max;
+    float yaw_min = state->m_fl_aim_yaw_min;
+
+    // take the larger magnitude
+    float delta = std::max(fabsf(yaw_max), fabsf(yaw_min));
+
+    // safety clamp (engine limits)
+    return std::clamp(delta, 20.f, 120.f);
 }

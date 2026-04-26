@@ -37,6 +37,18 @@ public:
 
 	void AirNS( AimPlayer* data, LagRecord* record );
 	void ResolvePoses( Player* player, LagRecord* record );
+	float ComputeConfidence(AimPlayer* data);
+
+	void OnMiss(AimPlayer* data);
+	void OnHit(AimPlayer* data);
+
+	float GetMaxDesyncDelta(CCSGOPlayerAnimState* state);
+
+	struct ResolveCandidate {
+		float yaw;
+		float score;
+	};
+
 
 public:
 	std::array< vec3_t, 64 > m_impacts;
