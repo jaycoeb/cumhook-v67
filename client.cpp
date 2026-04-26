@@ -306,10 +306,17 @@ void Client::EndMove(CUserCmd *cmd) {
 
 void Client::OnTick(CUserCmd *cmd) {
   // TODO; add this to the menu.
-  if (g_menu.main.misc.ranks.get() && cmd->m_buttons & IN_SCORE) {
-    static CCSUsrMsg_ServerRankRevealAll msg{};
-    g_csgo.ServerRankRevealAll(&msg);
-  }
+    static bool sent = false;
+    if (g_menu.main.misc.ranks.get() && cmd->m_buttons & IN_SCORE) {
+        if (!sent) {
+            static CCSUsrMsg_ServerRankRevealAll msg{};
+            g_csgo.ServerRankRevealAll(&msg);
+            sent = true;
+        }
+    }
+    else {
+        sent = false;
+    }
 
   if (g_menu.main.misc.clantag.get())
     g_cl.SetClantag();
@@ -595,16 +602,21 @@ void Client::UpdateIncomingSequences() {
   }
 
   // do not save too many of these.
-  while (m_sequences.size() > 2048)
-    m_sequences.pop_back();
+  if (m_sequences.size() > 2048)
+      m_sequences.resize(2048);
 }
 
 void Client::SetClantag() {
-  static int(__fastcall * clantag)(const char *, const char *);
-  if (!clantag)
-    clantag =
-        pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15"))
-            .as<int(__fastcall *)(const char *, const char *)>();
+    static int(__fastcall * clantag)(const char*, const char*);
+    if (!clantag)
+        clantag = pattern::find(g_csgo.m_engine_dll, XOR("53 56 57 8B DA 8B F9 FF 15"))
+        .as<int(__fastcall*)(const char*, const char*)>();
 
-  clantag("Cumhook", "Cumhook");
+    // Add a rate limit — engine doesn't need this called 64 times a second
+    static float next_update = 0.f;
+    if (g_csgo.m_globals->m_curtime < next_update)
+        return;
+
+    next_update = g_csgo.m_globals->m_curtime + 1.f;
+    clantag("Cumhook", "Cumhook");
 }
