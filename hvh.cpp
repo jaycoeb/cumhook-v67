@@ -863,20 +863,11 @@ void HVH::DoFakeAntiAim() {
 
 		// chatGPT
 	case 13:
-		struct ChaosState {
-			float phase = 0.f;
-			float amplitude = 60.f;
-			float frequency = 5.f;
-			float targetAmplitude = 60.f;
-			float targetFrequency = 5.f;
-			float blend = 0.f;
-			int mode = 0;
-		};
 
-		static ChaosState chaos;
+		chaos;
 
 		// time base
-		float time = g_cl.m_tick * 0.1f;
+		time = g_cl.m_tick * 0.1f;
 
 		// --- MODE SWITCHING (adds behavioral jumps) ---
 		if ((int)(time) % 3 == 0) {
@@ -888,12 +879,12 @@ void HVH::DoFakeAntiAim() {
 		}
 
 		// smooth transition between modes
-		float lerpSpeed = 0.05f;
+		lerpSpeed = 0.05f;
 		chaos.amplitude += (chaos.targetAmplitude - chaos.amplitude) * lerpSpeed;
 		chaos.frequency += (chaos.targetFrequency - chaos.frequency) * lerpSpeed;
 
 		// --- BASE CHAOTIC SIGNAL ---
-		float signal = 0.f;
+		signal = 0.f;
 
 		switch (chaos.mode) {
 		case 0:
@@ -911,36 +902,36 @@ void HVH::DoFakeAntiAim() {
 		}
 
 		// --- FRACTAL-LIKE LAYERING ---
-		float fractal = 0.f;
-		float scale = 1.f;
+		fractal = 0.f;
+		scale = 1.f;
 		for (int i = 0; i < 4; ++i) {
 			fractal += std::sin(time * chaos.frequency * scale) / scale;
 			scale *= 2.f;
 		}
 
 		// --- SMOOTH NOISE APPROXIMATION ---
-		float noise = std::sin(time * 12.9898f) * std::cos(time * 78.233f);
+		noise = std::sin(time * 12.9898f) * std::cos(time * 78.233f);
 
 		// --- RANDOM BURSTS (controlled spikes) ---
-		float burst = 0.f;
+		burst = 0.f;
 		if ((int)(time * 4.f) % 7 == 0) {
 			burst = std::sin(time * 40.f) * 0.5f;
 		}
 
 		// --- COMBINE EVERYTHING ---
-		float offset =
+		offset =
 			signal * chaos.amplitude +
 			fractal * 20.f +
 			noise * 15.f +
 			burst * 50.f;
 
 		// --- SOFT CLAMP (prevents extreme snapping) ---
-		float maxOffset = 120.f;
+		maxOffset = 120.f;
 		offset = std::max(-maxOffset, std::min(maxOffset, offset));
 
 		// --- FINAL SMOOTHING ---
-		static float last = 0.f;
-		float smooth = 0.15f;
+		last = 0.f;
+		smooth = 0.15f;
 		offset = last + (offset - last) * smooth;
 		last = offset;
 
@@ -950,13 +941,13 @@ void HVH::DoFakeAntiAim() {
 
 		// claude	
 	case 14:	
-		constexpr float MAX_YAW_DELTA = 179.f;
-		constexpr float SWAY_NORMALIZE = 69.f;
-		constexpr int   FLICK_DURATION = 1;   // ticks the fake is exposed
+		MAX_YAW_DELTA = 179.f;
+		SWAY_NORMALIZE = 69.f;
+		FLICK_DURATION = 1;   // ticks the fake is exposed
 
-		float& yaw = g_cl.m_cmd->m_view_angles.y;
-		const int   tick = g_cl.m_tick;
-		const float curtime = g_csgo.m_globals->m_curtime;
+		yaw = g_cl.m_cmd->m_view_angles.y;
+		tick = g_cl.m_tick;
+		curtime = g_csgo.m_globals->m_curtime;
 
 		// --- Fake flick state -----------------------------------
 	    // m_flick_ticks counts down; when > 0 the fake is live
@@ -969,14 +960,14 @@ void HVH::DoFakeAntiAim() {
 		}
 
 		 // Trigger a flick every N ticks (tweak to taste)
-		 constexpr int FLICK_INTERVAL = 24;
+		 FLICK_INTERVAL = 24;
 		 if (tick % FLICK_INTERVAL == 0)
 		 {
 			 m_flick_ticks = FLICK_DURATION; // arms the flick for next tick
 		 }
 
 		 // --- Normal cover logic (from before) -------------------
-		 const int rand_tick = rand() % 64;
+		 rand_tick = rand() % 64;
 
 		 if (tick < 10)
 		 {
@@ -994,12 +985,12 @@ void HVH::DoFakeAntiAim() {
 		 else if (curtime == 9.f || curtime == 12.f) { yaw -= 177.f; }
 		 else if (m_sway % 5 == 0)
 		 {
-			 const float jitter = static_cast<float>(rand() % 361) - 180.f;
-			 yaw += jitter + static_cast<float>(m_sway);
+			 jitter = rand() % 361 - 180.f;
+			 yaw += jitter + m_sway;
 		 }
 		 else
 		 {
-			 const float t = std::clamp(static_cast<float>(m_sway) / SWAY_NORMALIZE, -1.f, 1.f);
+			 t = std::clamp(static_cast<float>(m_sway) / SWAY_NORMALIZE, -1.f, 1.f);
 			 yaw = std::pow(static_cast<float>(m_sway), std::asin(t));
 		 }
 

@@ -51,6 +51,43 @@ public:
 	int    m_sway = 0;
 	int	   m_flick_ticks = 0;
 
+	//chatgpt shit
+	struct ChaosState {
+		float phase = 0.f;
+		float amplitude = 60.f;
+		float frequency = 5.f;
+		float targetAmplitude = 60.f;
+		float targetFrequency = 5.f;
+		float blend = 0.f;
+		int mode = 0;
+	};
+
+	ChaosState chaos;
+
+	float time = 0;
+	float lerpSpeed = 0;
+	float signal = 0.f;
+	float fractal = 0.f;
+	float scale = 0.f;
+	float noise = 0.f;
+	float burst = 0.f;
+	float offset = 0.f;
+	float maxOffset = 120.f;
+	float last = 0.f;
+	float smooth = 0.15f;
+
+	//claude shit
+	float MAX_YAW_DELTA = 179.f;
+	float SWAY_NORMALIZE = 69.f;
+	int   FLICK_DURATION = 1;
+	float yaw = 0.f;
+	int  tick = 0;
+	float curtime = 0;
+	int FLICK_INTERVAL = 24;
+	int rand_tick = 0;
+	float jitter = 0.f;
+	float t = 0.f;
+
 	bool   m_left, m_right, m_back;
 	int direction = -1;
 
