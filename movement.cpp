@@ -1,6 +1,6 @@
 #include "includes.h"
 
-Movement g_movement{ };;
+Movement g_movement{ };
 
 void Movement::JumpRelated( ) {
 	if( g_cl.m_local->m_MoveType( ) == MOVETYPE_NOCLIP )
@@ -429,7 +429,7 @@ void Movement::AutoPeek( ) {
 
 	else m_invert = false;
 
-	bool can_stop = g_menu.main.movement.autostop_always_on.get( ) || ( !g_menu.main.movement.autostop_always_on.get( ) && g_input.GetKeyState( g_menu.main.movement.autostop.get( ) ) );
+	bool can_stop = g_menu.main.movement.autostop_always_on.get() || g_input.GetKeyState(g_menu.main.movement.autostop.get());
 	if( ( g_input.GetKeyState( g_menu.main.movement.autopeek.get( ) ) || can_stop ) && g_aimbot.m_stop ) {
 		Movement::QuickStop( );
 	}
@@ -437,12 +437,11 @@ void Movement::AutoPeek( ) {
 
 void Movement::QuickStop( ) {
 	// convert velocity to angular momentum.
+	const vec3_t velocity = g_cl.m_local->m_vecVelocity();
 	ang_t angle;
-	math::VectorAngles( g_cl.m_local->m_vecVelocity( ), angle );
+	math::VectorAngles(velocity, angle);
 
-	// get our current speed of travel.
-	float speed = g_cl.m_local->m_vecVelocity( ).length( );
-
+	float speed = velocity.length();
 	// fix direction by factoring in where we are looking.
 	angle.y = g_cl.m_view_angles.y - angle.y;
 
@@ -464,7 +463,8 @@ void Movement::QuickStop( ) {
 
 void Movement::FakeWalk( ) {
 	vec3_t velocity{ g_cl.m_local->m_vecVelocity( ) };
-	int    ticks{ }, max{ 16 };
+	int       ticks{ };
+	const int max_ticks{ 16 };
 
 	if( !g_input.GetKeyState( g_menu.main.movement.fakewalk.get( ) ) )
 		return;
@@ -513,7 +513,7 @@ void Movement::FakeWalk( ) {
 	}
 
 	// zero forwardmove and sidemove.
-	if( ticks > ( ( max - 1 ) - g_csgo.m_cl->m_choked_commands ) || !g_csgo.m_cl->m_choked_commands ) {
+	if (ticks > ((max_ticks - 1) - g_csgo.m_cl->m_choked_commands) || !g_csgo.m_cl->m_choked_commands) {
 		g_cl.m_cmd->m_forward_move = g_cl.m_cmd->m_side_move = 0.f;
 	}
 }
