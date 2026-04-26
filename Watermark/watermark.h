@@ -19,8 +19,8 @@ struct Config {
   bool show_time = true;
   bool show_user = false;
   bool debug_mode = false;
-  int pos_x_offset = 10; // pixels from the right edge
-  int pos_y_offset = 8;  // pixels from the top edge
+  int pos_x_offset = 260; // pixels from the right edge
+  int pos_y_offset = 6;  // pixels from the top edge
 };
 
 extern Config cfg;

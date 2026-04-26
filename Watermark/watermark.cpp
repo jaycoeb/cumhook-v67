@@ -47,10 +47,10 @@ static Color lerp_color(Color a, Color b, float t) {
 
 void initializeWatermark() {
   // Bold title font — "eternal.codes"
-  s_title_font = render::Font(XOR("Verdana"), 13, FW_BOLD,
+  s_title_font = render::Font(XOR("Comic Sans MS"), 100, FW_BOLD,
                               FONTFLAG_ANTIALIAS | FONTFLAG_DROPSHADOW);
   // Lighter stat font — fps / ping / tick / time
-  s_stat_font = render::Font(XOR("Verdana"), 12, FW_NORMAL, FONTFLAG_ANTIALIAS);
+  s_stat_font = render::Font(XOR("Comic Sans MS"), 80, FW_NORMAL, FONTFLAG_ANTIALIAS);
 
   // Reset state so the next draw starts the fade-in from scratch
   s_fade_alpha = 0.f;
@@ -169,7 +169,7 @@ void renderWatermark(int screen_width, int screen_height) {
   content_w += pad_x;
 
   const int panel_h = accent_h + pad_y + title_sz.m_height + pad_y;
-  const int panel_x = screen_width - content_w - cfg.pos_x_offset;
+  const int panel_x = (screen_width - content_w) - cfg.pos_x_offset;
   const int panel_y = cfg.pos_y_offset;
 
   // --- Alpha levels (all gated by fade and opacity) ---
