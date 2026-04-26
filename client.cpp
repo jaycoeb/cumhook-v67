@@ -622,5 +622,6 @@ void Client::SetClantag() {
 
         pos = (pos + 1) % tag.length();
 
-  clantag("Cumhook", "Cumhook");
+        clantag("Cumhook", "Cumhook");
+    }
 }
