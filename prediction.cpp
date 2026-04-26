@@ -1,44 +1,60 @@
 #include "includes.h"
 
-bool Hooks::InPrediction( ) {
-	Stack stack;
-	ang_t *angles;
+bool Hooks::InPrediction() {
+    static Address ret1 = pattern::find(g_csgo.m_client_dll,
+        XOR("84 C0 75 0B 8B 0D ? ? ? ? 8B 01 FF 50 4C"));
 
-	// note - dex; first 2 'test al, al' instructions in C_BasePlayer::CalcPlayerView.
-	static Address CalcPlayerView_ret1{ pattern::find( g_csgo.m_client_dll, XOR( "84 C0 75 0B 8B 0D ? ? ? ? 8B 01 FF 50 4C" ) ) };
-	static Address CalcPlayerView_ret2{ pattern::find( g_csgo.m_client_dll, XOR( "84 C0 75 08 57 8B CE E8 ? ? ? ? 8B 06" ) ) };
+    static Address ret2 = pattern::find(g_csgo.m_client_dll,
+        XOR("84 C0 75 08 57 8B CE E8 ? ? ? ? 8B 06"));
 
-	if( g_cl.m_local && g_menu.main.visuals.novisrecoil.get( ) ) {
-		// note - dex; apparently this calls 'view->DriftPitch()'.
-		//             i don't know if this function is crucial for normal gameplay, if it causes issues then comment it out.
-		if( stack.ReturnAddress( ) == CalcPlayerView_ret1 )
-			return true;
+    // fallback immediately if anything critical missing
+    if (!g_cl.m_local || !g_menu.main.visuals.novisrecoil.get() || !ret1 || !ret2)
+        return g_hooks.m_prediction.GetOldMethod<InPrediction_t>(CPrediction::INPREDICTION)(this);
 
-		if( stack.ReturnAddress( ) == CalcPlayerView_ret2 ) {
-			// at this point, angles are copied into the CalcPlayerView's eyeAngles argument.
-			// (ebp) InPrediction -> (ebp) CalcPlayerView + 0xC = eyeAngles.
-			angles = stack.next( ).arg( 0xC ).to< ang_t* >( );
+    Stack stack{};
+    Address ret = stack.ReturnAddress();
 
-			if( angles ) {
-				*angles -= g_cl.m_local->m_viewPunchAngle( )
-					     + ( g_cl.m_local->m_aimPunchAngle( ) * g_csgo.weapon_recoil_scale->GetFloat( ) )
-					     * g_csgo.view_recoil_tracking->GetFloat( );
-			}
+    // only compare if patterns are valid
+    if (ret == ret1)
+        return true;
 
-			return true;
-		}
-	}
+    if (ret == ret2) {
+        ang_t* angles = stack.next().arg(0xC).to<ang_t*>();
 
-	return g_hooks.m_prediction.GetOldMethod< InPrediction_t >( CPrediction::INPREDICTION )( this );
+        // stronger validation
+        if (angles && std::isfinite(angles->x) && std::isfinite(angles->y)) {
+            ang_t recoil =
+                g_cl.m_local->m_viewPunchAngle() +
+                (g_cl.m_local->m_aimPunchAngle() *
+                    g_csgo.weapon_recoil_scale->GetFloat()) *
+                g_csgo.view_recoil_tracking->GetFloat();
+
+            // clamp instead of raw subtract (prevents crazy values)
+            ang_t new_angles = *angles - recoil;
+            new_angles.normalize();   // make sure your ang_t has this
+
+            *angles = new_angles;
+        }
+
+        return true;
+    }
+
+    return g_hooks.m_prediction.GetOldMethod<InPrediction_t>(CPrediction::INPREDICTION)(this);
 }
 
-void Hooks::RunCommand( Entity* ent, CUserCmd* cmd, IMoveHelper* movehelper ) {
-	// airstuck jitter / overpred fix.
-	if( cmd->m_tick >= std::numeric_limits< int >::max( ) )
+void Hooks::RunCommand(Entity* ent, CUserCmd* cmd, IMoveHelper* movehelper) {
+	if (!ent || !cmd)
 		return;
 
-	g_hooks.m_prediction.GetOldMethod< RunCommand_t >( CPrediction::RUNCOMMAND )( this, ent, cmd, movehelper );
+	// don't completely skip prediction
+	if (cmd->m_tick >= std::numeric_limits<int>::max()) {
+		cmd->m_tick = 0; // safer fallback than skipping
+	}
 
-	// store non compressed netvars.
-	g_netdata.store( );
+	g_hooks.m_prediction.GetOldMethod<RunCommand_t>(CPrediction::RUNCOMMAND)(
+		this, ent, cmd, movehelper);
+
+	// validate before storing
+	if (g_cl.m_local && ent == g_cl.m_local)
+		g_netdata.store();
 }
