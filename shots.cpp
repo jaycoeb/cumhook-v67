@@ -2,6 +2,15 @@
 
 Shots g_shots{ };
 
+static const char* GetSide(float delta) {
+	if (fabsf(delta) < 20.f)
+		return "CENTER";
+	else if (delta > 0.f)
+		return "RIGHT";
+	else
+		return "LEFT";
+}
+
 static const char* ResolveModeToString(size_t mode) {
 	switch (mode) {
 	case Resolver::Modes::RESOLVE_NONE:  return "NONE";
@@ -208,21 +217,32 @@ void Shots::OnImpact( IGameEvent *evt ) {
 
 		const char* mode_str = ResolveModeToString(mode);
 
-		g_csgo.m_cvar->ConsoleColorPrintf(
-			{ 255, 100, 100, 255 },
-			"[cumhook] MISS | mode: %s | yaw: %.1f | body: %.1f | delta: %.1f\n",
-			mode_str,
-			shot_yaw,
-			body_yaw,
-			delta
-		);
+		int total_misses =
+			data->m_resolve_history.miss_side +
+			data->m_resolve_history.miss_invert +
+			data->m_resolve_history.miss_bruteforce;
+
+		int brute_index = total_misses % 4;
 
 		g_csgo.m_cvar->ConsoleColorPrintf(
 			{ 255, 100, 100, 255 },
-			"missed_shots: %d | stand_index: %d | body_index: %d\n",
+			"[MISS] mode:%s | yaw:%.1f | body:%.1f | delta:%.1f (%s)\n",
+			mode_str,
+			shot_yaw,
+			body_yaw,
+			delta,
+			GetSide(delta)
+		);
+
+		g_csgo.m_cvar->ConsoleColorPrintf(
+			{ 255, 150, 150, 255 },
+			"misses:%d | brute:%d | side:%d | inv:%d | center:%d | brute_idx:%d\n",
 			data->m_missed_shots,
-			data->m_stand_index,
-			data->m_body_index
+			total_misses,
+			data->m_resolve_history.miss_side,
+			data->m_resolve_history.miss_invert,
+			data->m_resolve_history.miss_bruteforce,
+			brute_index
 		);
 	}
 
@@ -448,13 +468,28 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	size_t mode = impact->m_shot->m_record->m_mode;
 	const char* mode_str = ResolveModeToString(mode);
 
+	int total_misses =
+		data->m_resolve_history.miss_side +
+		data->m_resolve_history.miss_invert +
+		data->m_resolve_history.miss_bruteforce;
+
 	g_csgo.m_cvar->ConsoleColorPrintf(
 		{ 100, 255, 100, 255 },
-		"[cumhook] HIT | mode: %s | yaw: %.1f | body: %.1f | delta: %.1f\n",
+		"[HIT] mode:%s | yaw:%.1f | body:%.1f | delta:%.1f (%s)\n",
 		mode_str,
 		shot_yaw,
 		body_yaw,
-		delta
+		delta,
+		GetSide(delta)
+	);
+
+	g_csgo.m_cvar->ConsoleColorPrintf(
+		{ 150, 255, 150, 255 },
+		"resolved_after_misses:%d | side:%d | inv:%d | center:%d\n",
+		total_misses,
+		data->m_resolve_history.miss_side,
+		data->m_resolve_history.miss_invert,
+		data->m_resolve_history.miss_bruteforce
 	);
 
 	// if we miss a shot on body update.

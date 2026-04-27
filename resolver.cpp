@@ -107,7 +107,7 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
     // 1. LBY proximity (core for 2018)
     // --------------------------------------------------
     float lby_delta = fabsf(math::NormalizedAngle(yaw - body));
-    score += (180.f - lby_delta) * 1.5f;
+    score += (180.f - lby_delta) * 0.6f;
 
     // --------------------------------------------------
     // 2. movement direction
@@ -152,14 +152,15 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
 
     // missed center → stop picking center
     if (data->m_resolve_history.miss_bruteforce > 0) {
-        if (fabsf(delta) < 20.f)
-            score -= 50.f;
+        if (fabsf(delta) < 15.f) {
+            score -= 150.f; // destroy body angle
+        }
     }
 
     // missed right side → boost LEFT
     if (data->m_resolve_history.miss_side > 0) {
         if (delta > 0.f)   // right side
-            score -= 40.f;
+            score -= 90.f;
         else
             score += 25.f;
     }
@@ -167,7 +168,7 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
     // missed left side → boost RIGHT
     if (data->m_resolve_history.miss_invert > 0) {
         if (delta < 0.f)
-            score -= 40.f;
+            score -= 90.f;
         else
             score += 25.f;
     }
@@ -183,8 +184,16 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
             score += 35.f;
     }
 
+    float last = data->m_resolve_history.last_angle;
+    float diff = fabsf(math::NormalizedAngle(yaw - last));
+
+    if (diff < 10.f) {
+        score -= 100.f; // strong penalty so it NEVER picks same angle again
+    }
+
     return score;
 }
+
 
 static float SelectBestYaw(AimPlayer* data, LagRecord* record) {
     std::vector<Resolver::ResolveCandidate> candidates;
@@ -500,8 +509,45 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
             data->m_trusted_lby = record->m_body;
             data->m_trusted_lby_time = record->m_anim_time;
 
+            if (data->m_resolve_history.miss_bruteforce > 1) {
+                float body = record->m_body;
+
+                switch ((data->m_resolve_history.miss_bruteforce) % 3) {
+                case 0: record->m_eye_angles.y = body + 180.f; break;
+                case 1: record->m_eye_angles.y = body + 90.f;  break;
+                case 2: record->m_eye_angles.y = body - 90.f;  break;
+                }
+
+                return;
+            }
+
             record->m_eye_angles.y = record->m_body;
             return; // ONLY hard return allowed
+        }
+    }
+
+    // =========================================================
+// STEP 2: FORCE BRUTE AFTER MISSES (ANTI-REPEAT FIX)
+// =========================================================
+    int misses =
+        data->m_resolve_history.miss_side +
+        data->m_resolve_history.miss_invert +
+        data->m_resolve_history.miss_bruteforce;
+
+    if (misses >= 2) {
+        switch (data->m_shots % 4) {
+        case 0:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body + 180.f);
+            return;
+        case 1:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body + 90.f);
+            return;
+        case 2:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body - 90.f);
+            return;
+        case 3:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body);
+            return;
         }
     }
 
@@ -561,6 +607,22 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
     if (data->m_resolve_history.miss_bruteforce > 1) {
         candidates.push_back(body + 180.f);
     }
+
+    // =========================================================
+// STEP 5.5: REMOVE DUPLICATE ANGLES (VERY IMPORTANT)
+// =========================================================
+    for (auto& yaw : candidates)
+        yaw = math::NormalizedAngle(yaw);
+
+    std::sort(candidates.begin(), candidates.end());
+
+    candidates.erase(
+        std::unique(candidates.begin(), candidates.end(),
+            [](float a, float b) {
+                return fabsf(math::NormalizedAngle(a - b)) < 1.0f;
+            }),
+        candidates.end()
+    );
 
     // =========================================================
     // STEP 6: SCORE EVERYTHING
@@ -761,6 +823,16 @@ void Resolver::OnMiss(AimPlayer* data) {
 
     else
         data->m_resolve_history.miss_invert++;   // left side missed
+
+    // ==================================================
+    // 🔍 DEBUG LOG (ADD THIS PART)
+    // ==================================================
+    g_csgo.m_cvar->ConsoleColorPrintf(
+        { 255, 200, 100, 255 },
+        "[DEBUG MISS CLASSIFY] delta: %.1f -> %s\n",
+        delta,
+        (fabsf(delta) < 20.f) ? "CENTER" : (delta > 0.f ? "RIGHT" : "LEFT")
+    );
 }
 
 void Resolver::OnHit(AimPlayer* data) {
