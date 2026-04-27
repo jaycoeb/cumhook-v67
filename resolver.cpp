@@ -1,6 +1,52 @@
 #include "includes.h"
 #include <numeric>
 
+static bool IsAngleRepeated(AimPlayer* data, float yaw) {
+    for (float tried : data->m_tried_angles) {
+        float diff = fabsf(math::NormalizedAngle(yaw - tried));
+
+        if (diff < 15.f) // tolerance
+            return true;
+    }
+    return false;
+}
+
+static float NormalizeYaw(float yaw) {
+    return math::NormalizedAngle(yaw);
+}
+
+static AimPlayer::AngleStat* GetAngleStat(AimPlayer* data, float yaw) {
+    yaw = NormalizeYaw(yaw);
+
+    for (auto& s : data->m_angle_stats) {
+        if (fabsf(math::NormalizedAngle(s.yaw - yaw)) < 10.f)
+            return &s;
+    }
+
+    data->m_angle_stats.push_back({ yaw, 0, 0 });
+
+    if (data->m_angle_stats.size() > 16)
+        data->m_angle_stats.erase(data->m_angle_stats.begin());
+
+    return &data->m_angle_stats.back();
+}
+
+static float GetAdaptiveScore(AimPlayer* data, float yaw) {
+    auto* stat = GetAngleStat(data, yaw);
+    if (!stat)
+        return 0.f;
+
+    float score = 0.f;
+
+    // reward hits
+    score += stat->hits * 50.f;
+
+    // punish misses
+    score -= stat->misses * 60.f;
+
+    return score;
+}
+
 static float pred_foot_yaw(const LagRecord& a, const LagRecord& b, float predicted_offset) {
     constexpr float foot_speed = 80.0f;
 
@@ -144,28 +190,26 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
         }
     }
 
-    // ==================================================
-    // 🔥 5. MISS ADAPTATION (THIS IS THE GAME CHANGER)
-    // ==================================================
-
     float delta = math::NormalizedAngle(yaw - body);
 
-    // missed center → stop picking center
-    if (data->m_resolve_history.miss_bruteforce > 0) {
-        if (fabsf(delta) < 15.f) {
-            score -= 150.f; // destroy body angle
-        }
+    // ==================================================
+    // 🔥 MISS ADAPTATION (FIXED)
+    // ==================================================
+
+    // CENTER penalty (THIS FIXES YOUR MAIN ISSUE)
+    if (fabsf(delta) < 20.f) {
+        score -= data->m_resolve_history.miss_center * 120.f;
     }
 
-    // missed right side → boost LEFT
+    // RIGHT failed → punish right, boost left
     if (data->m_resolve_history.miss_side > 0) {
-        if (delta > 0.f)   // right side
+        if (delta > 0.f)
             score -= 90.f;
         else
             score += 25.f;
     }
 
-    // missed left side → boost RIGHT
+    // LEFT failed → punish left, boost right
     if (data->m_resolve_history.miss_invert > 0) {
         if (delta < 0.f)
             score -= 90.f;
@@ -173,22 +217,40 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
             score += 25.f;
     }
 
-    // heavy misses → force opposite brute
+    // OPPOSITE failed → punish 180
+    if (data->m_resolve_history.miss_bruteforce > 0) {
+        if (fabsf(delta) > 140.f)
+            score -= 90.f;
+    }
+
+    // force opposite after many misses
     int total_misses =
         data->m_resolve_history.miss_side +
         data->m_resolve_history.miss_invert +
+        data->m_resolve_history.miss_center +
         data->m_resolve_history.miss_bruteforce;
 
     if (total_misses >= 3) {
-        if (fabsf(delta) > 140.f) // opposite side
-            score += 35.f;
+        if (fabsf(delta) > 140.f)
+            score += 40.f;
     }
+
+    // ==================================================
+    // 🔥 HARD ANTI-REPEAT (VERY IMPORTANT)
+    // ==================================================
 
     float last = data->m_resolve_history.last_angle;
     float diff = fabsf(math::NormalizedAngle(yaw - last));
 
     if (diff < 10.f) {
-        score -= 100.f; // strong penalty so it NEVER picks same angle again
+        score -= 1000.f; // NEVER repeat
+    }
+
+    for (auto& tried : data->m_tried_angles) {
+        float diff = fabsf(math::NormalizedAngle(yaw - tried));
+        if (diff < 10.f) {
+            score -= 500.f;
+        }
     }
 
     return score;
@@ -624,6 +686,55 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         candidates.end()
     );
 
+    for (auto& yaw : candidates)
+        yaw = math::NormalizedAngle(yaw);
+
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end(),
+        [](float a, float b) {
+            return fabsf(math::NormalizedAngle(a - b)) < 1.0f;
+        }),
+        candidates.end());
+
+    candidates.erase(
+        std::remove_if(candidates.begin(), candidates.end(),
+            [&](float yaw) {
+                float delta = math::NormalizedAngle(yaw - record->m_body);
+
+                if (fabsf(delta) < 20.f && data->m_resolve_history.miss_center >= 2)
+                    return true;
+
+                if (delta > 0.f && data->m_resolve_history.miss_side >= 2)
+                    return true;
+
+                if (delta < 0.f && data->m_resolve_history.miss_invert >= 2)
+                    return true;
+
+                return false;
+            }),
+        candidates.end()
+    );
+
+    auto GetMissWeight = [&](float yaw) -> float {
+        float delta = math::NormalizedAngle(yaw - record->m_body);
+
+        float weight = 0.f;
+
+        // center
+        if (fabsf(delta) < 20.f)
+            weight -= data->m_resolve_history.miss_center * 50.f;
+
+        // right side
+        else if (delta > 0.f)
+            weight -= data->m_resolve_history.miss_side * 50.f;
+
+        // left side
+        else
+            weight -= data->m_resolve_history.miss_invert * 50.f;
+
+        return weight;
+        };
+
     // =========================================================
     // STEP 6: SCORE EVERYTHING
     // =========================================================
@@ -631,7 +742,11 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
 
     for (float yaw : candidates) {
         float norm = math::NormalizedAngle(yaw);
+
         float score = ScoreYaw(data, record, norm);
+
+        // 🔥 apply miss-based weight
+        score += GetMissWeight(norm);
 
         if (score > best_score) {
             best_score = score;
@@ -814,24 +929,70 @@ void Resolver::OnMiss(AimPlayer* data) {
 
     float delta = math::NormalizedAngle(shot - body);
 
-    // categorize miss
-    if (fabsf(delta) < 20.f)
+    // =====================================================
+    // 🔥 CORRECT CLASSIFICATION
+    // =====================================================
+
+    const char* type = "UNKNOWN";
+
+    // CENTER
+    if (fabsf(delta) < 20.f) {
+        data->m_resolve_history.miss_center++;
+        type = "CENTER";
+    }
+
+    // RIGHT
+    else if (delta > 0.f && fabsf(delta) <= 140.f) {
+        data->m_resolve_history.miss_side++;
+        type = "RIGHT";
+    }
+
+    // LEFT
+    else if (delta < 0.f && fabsf(delta) <= 140.f) {
+        data->m_resolve_history.miss_invert++;
+        type = "LEFT";
+    }
+
+    // OPPOSITE (180)
+    else {
         data->m_resolve_history.miss_bruteforce++;
+        type = "OPPOSITE";
+    }
 
-    else if (delta > 0.f)
-        data->m_resolve_history.miss_side++;     // right side missed
+    // =====================================================
+    // 🔥 STORE FAILED ANGLE (anti-repeat system)
+    // =====================================================
 
-    else
-        data->m_resolve_history.miss_invert++;   // left side missed
+    float norm = math::NormalizedAngle(shot);
+    data->m_tried_angles.push_front(norm);
 
-    // ==================================================
-    // 🔍 DEBUG LOG (ADD THIS PART)
-    // ==================================================
+    // limit memory
+    if (data->m_tried_angles.size() > 8)
+        data->m_tried_angles.pop_back();
+
+    // =====================================================
+    // 🔥 ANGLE STAT TRACKING
+    // =====================================================
+
+    auto* stat = GetAngleStat(data, norm);
+    if (stat)
+        stat->misses++;
+
+    // decay old stats (keeps system adaptive)
+    for (auto& s : data->m_angle_stats) {
+        if (s.misses > 0)
+            s.misses--;
+    }
+
+    // =====================================================
+    // 🔥 DEBUG LOG (accurate now)
+    // =====================================================
+
     g_csgo.m_cvar->ConsoleColorPrintf(
         { 255, 200, 100, 255 },
         "[DEBUG MISS CLASSIFY] delta: %.1f -> %s\n",
         delta,
-        (fabsf(delta) < 20.f) ? "CENTER" : (delta > 0.f ? "RIGHT" : "LEFT")
+        type
     );
 }
 
@@ -839,10 +1000,20 @@ void Resolver::OnHit(AimPlayer* data) {
     data->m_resolve_history.last_hit_angle =
         data->m_resolve_history.last_angle;
 
-    // reset misses (important)
     data->m_resolve_history.miss_bruteforce = 0;
     data->m_resolve_history.miss_side = 0;
     data->m_resolve_history.miss_invert = 0;
+    data->m_resolve_history.miss_center = 0;
+    data->m_resolve_history.brute_index = 0;
+
+    // 🔥 CLEAR HISTORY (WE FOUND THE RIGHT ANGLE)
+    data->m_tried_angles.clear();
+
+    float yaw = data->m_resolve_history.last_angle;
+
+    auto* stat = GetAngleStat(data, yaw);
+    if (stat)
+        stat->hits++;
 }
 
 float Resolver::GetMaxDesyncDelta(CCSGOPlayerAnimState* state) {

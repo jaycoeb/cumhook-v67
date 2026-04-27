@@ -61,6 +61,7 @@ public:
 	int m_stand_index2;
 	int m_body_index;
 
+	std::deque<float> m_tried_angles;
 
 	// data about the LBY proxy.
 	float m_body;
@@ -68,15 +69,25 @@ public:
 
 	struct ResolveHistory {
 		float last_angle = 0.f;
-
-		int miss_bruteforce = 0;
-		int miss_side = 0;
-		int miss_invert = 0;
-
 		float last_hit_angle = 0.f;
+
+		int miss_side = 0;        // right side failed
+		int miss_invert = 0;      // left side failed
+		int miss_center = 0;      // 🔥 NEW (THIS FIXES YOUR ISSUE)
+		int miss_bruteforce = 0;  // 180/opposite failed
+
+		int brute_index = 0;      // optional but useful
 	};
 
 	ResolveHistory m_resolve_history;
+
+	struct AngleStat {
+		float yaw;
+		int hits = 0;
+		int misses = 0;
+	};
+
+	std::vector<AngleStat> m_angle_stats;
 
 	//std::deque< float >            m_lbyt_update;
 	//std::deque< float >			   m_prefer_stand;

@@ -76,6 +76,14 @@ public:
 	float last = 0.f;
 	float smooth = 0.15f;
 
+	bool m_flip = false;
+	int  m_hit_count = 0;
+	int  m_missed_shots = 0; // optional if you use miss-based flip too
+
+	float desync = 0.f;
+
+	int side;
+
 	//claude shit
 	float MAX_YAW_DELTA = 179.f;
 	float SWAY_NORMALIZE = 69.f;
@@ -102,6 +110,7 @@ public:
 	void DoFakeAntiAim();
 	void AntiAim();
 	void SendPacket();
+	void OnHit();
 };
 
 extern HVH g_hvh;

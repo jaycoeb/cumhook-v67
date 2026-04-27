@@ -76,22 +76,29 @@ void events::round_end( IGameEvent* evt ) {
 		g_cl.m_round_end = true;
 }
 
-void events::player_hurt( IGameEvent* evt ) {
-    int attacker, victim;
+void events::player_hurt(IGameEvent* evt) {
+	int attacker, victim;
 
-	// forward event to resolver / shots hurt processing.
-	// g_resolver.hurt( evt );
-	g_shots.OnHurt( evt );
+	g_shots.OnHurt(evt);
 
-    // offscreen esp damage stuff.
-    if( evt ) {
-        attacker = g_csgo.m_engine->GetPlayerForUserID( evt->m_keys->FindKey( HASH( "attacker" ) )->GetInt( ) );
-        victim   = g_csgo.m_engine->GetPlayerForUserID( evt->m_keys->FindKey( HASH( "userid" ) )->GetInt( ) );
+	if (evt) {
+		attacker = g_csgo.m_engine->GetPlayerForUserID(
+			evt->m_keys->FindKey(HASH("attacker"))->GetInt()
+		);
 
-        // a player damaged the local player.
-        if( attacker > 0 && attacker < 64 && victim == g_csgo.m_engine->GetLocalPlayer( ) )
-            g_visuals.m_offscreen_damage[ attacker ] = { 3.f, 0.f, colors::red };
-    }
+		victim = g_csgo.m_engine->GetPlayerForUserID(
+			evt->m_keys->FindKey(HASH("userid"))->GetInt()
+		);
+
+		// 🔥 ADD THIS BLOCK
+		if (victim == g_csgo.m_engine->GetLocalPlayer()) {
+			g_hvh.OnHit();
+		}
+
+		// existing offscreen damage
+		if (attacker > 0 && attacker < 64 && victim == g_csgo.m_engine->GetLocalPlayer())
+			g_visuals.m_offscreen_damage[attacker] = { 3.f, 0.f, colors::red };
+	}
 }
 
 void events::bullet_impact( IGameEvent* evt ) {

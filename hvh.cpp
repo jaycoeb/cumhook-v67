@@ -2,6 +2,32 @@
 
 HVH g_hvh{ };;
 
+int m_fake_flick_ticks = 0;
+int m_fake_flick_cooldown = 0;
+int m_desync_side = 1;   // 1 = right, -1 = left
+int m_hits_taken = 0;
+int m_flip_threshold = 1; // will be randomized
+bool m_flip = false;
+bool m_should_flip = false;   // queued flip
+float m_flip_time = 0.f;      // when to flip
+int m_hit_count = 0;
+
+void HVH::OnHit() {
+	m_hit_count++;
+
+	int trigger = (rand() % 2) + 1;
+
+	if (m_hit_count >= trigger) {
+		m_hit_count = 0;
+
+		// queue flip instead of instant
+		m_should_flip = true;
+
+		// delay it slightly (unpredictable timing)
+		m_flip_time = g_csgo.m_globals->m_curtime + g_csgo.RandomFloat(0.1f, 0.35f);
+	}
+}
+
 void HVH::UpdateHotkeys(Stage_t stage) {
 	if (stage != FRAME_RENDER_START || !g_cl.m_processing)
 		return;
@@ -216,7 +242,7 @@ void HVH::AutoDirection() {
 
 void HVH::GetAntiAimDirection() {
 	// edge aa.
-	if (false && g_cl.m_local->m_vecVelocity().length_2d() < 320.f && direction == -1) { // TODO: Map freestand[2] to menu
+	if (g_menu.main.antiaim.edge.get() && g_cl.m_local->m_vecVelocity().length_2d() < 320.f) { // TODO: Map freestand[2] to menu
 
 		ang_t ang;
 		if (DoEdgeAntiAim(g_cl.m_local, ang)) {
@@ -515,13 +541,13 @@ void HVH::DoRealAntiAim() {
 			if (stand) {
 				switch (g_menu.main.antiaim.body_fake_stand.get()) {
 
-					// left.
-					case 1:
-						if (false && GetAsyncKeyState(VK_SPACE)) // TODO: Add body_fake_stand_fakewalk and slowMotion_key to menu
-							break;
+				// left.
+				case 1:
+					if (false && GetAsyncKeyState(VK_SPACE)) // TODO: Add body_fake_stand_fakewalk and slowMotion_key to menu
+						break;
 
 						g_cl.m_cmd->m_view_angles.y += 110.f;
-						break;
+					break;
 
 					// right.
 				case 2:
@@ -566,22 +592,51 @@ void HVH::DoRealAntiAim() {
 
 					//cumhookbody
 				case 7:
-					//mmmmm cum
-					m_sway++;
-					g_cl.m_cmd->m_view_angles.y += cos(m_sway) * 30;
-					if ((cos(m_sway) * 30) > 135)
-					{
-						g_cl.m_cmd->m_view_angles.y += m_sway;
-						m_sway = 0;
+				
+					float desync = 120.f;
+
+					// base yaw
+					float yaw = m_direction;
+
+					// ---------------------------------------
+					// 1. DESYNC SIDE (controlled, not random spam)
+					// ---------------------------------------
+					int side = m_desync_side;
+
+					if (m_flip)
+						side *= -1;
+
+					// ---------------------------------------
+					// 2. APPLY REAL / FAKE SPLIT
+					// ---------------------------------------
+					if (*g_cl.m_packet)
+						yaw += desync * side;   // fake
+					else
+						yaw -= desync * side;   // real
+
+
+					// ---------------------------------------
+					// 3. CONTROLLED JITTER (NOT EVERY TICK)
+					// ---------------------------------------
+					static int jitter_tick = 0;
+					jitter_tick++;
+
+					if (jitter_tick > 3) { // change every few ticks
+						jitter_tick = 0;
+
+						static float jitter = 0.f;
+						jitter = g_csgo.RandomFloat(-30.f, 30.f);
+
+						yaw += jitter;
 					}
 
-					if (g_cl.m_tick == 21)
-						g_cl.m_cmd->m_view_angles.y -= 69.f;
-					if (g_cl.m_tick == 37)
-						g_cl.m_cmd->m_view_angles.y += 69.f;
-					if (g_cl.m_tick == 63)
-						g_cl.m_cmd->m_view_angles.y += m_sway * 2;
+					// ---------------------------------------
+					// 4. OPTIONAL: EXTRA BREAK ON FLIP
+					// ---------------------------------------
+					if (m_flip)
+						yaw += 45.f;
 
+					g_cl.m_cmd->m_view_angles.y = yaw;
 					break;
 				}
 			}
@@ -829,16 +884,60 @@ void HVH::DoFakeAntiAim() {
 			g_cl.m_cmd->m_view_angles.y = pow(m_sway, asin(m_sway / 69));
 		break;
 
-		//broken fake flick (probably should be removed but hey it was a pain to write so here it is) (thank you cosmic for the idea) (also this is not actually broken, it works as intended, which is to be a random mess of angles that changes every tick) (also thank you to anyone who actually reads this comment, you are a real one) (also sorry for the cringe code, it was a pain to write and i just wanted to have some fun with it) (also if you want to use this code for your own cheat, go ahead, just give credit where credit is due and dont) (also if you want to improve this code, go ahead, just make sure to keep the random nature of it and dont make it into a predictable pattern) (also if you made it this far, you are a real one and i love you) (also if you didnt make it this far, you are still a real one and i love you too) (also if you want to see more of this cringe code, let me know, i have a lot of) it was a pain to write and i just wanted to have some fun with it) (also if you want to see more of this cringe code, let me know, i have a lot of it)
+		//FIXED fake flick (probably should be removed but hey it was a pain to write so here it is) (thank you cosmic for the idea) (also this is not actually broken, it works as intended, which is to be a random mess of angles that changes every tick) (also thank you to anyone who actually reads this comment, you are a real one) (also sorry for the cringe code, it was a pain to write and i just wanted to have some fun with it) (also if you want to use this code for your own cheat, go ahead, just give credit where credit is due and dont) (also if you want to improve this code, go ahead, just make sure to keep the random nature of it and dont make it into a predictable pattern) (also if you made it this far, you are a real one and i love you) (also if you didnt make it this far, you are still a real one and i love you too) (also if you want to see more of this cringe code, let me know, i have a lot of) it was a pain to write and i just wanted to have some fun with it) (also if you want to see more of this cringe code, let me know, i have a lot of it)
 	case 11:
-		if (g_cl.m_body > 67.f) {
-			g_cl.m_cmd->m_view_angles.y += 180.f;
-			g_cl.m_body = 0.f;
-		}
-		 else
-			g_cl.m_cmd->m_view_angles.y = g_cl.m_body - 10.f;
+		desync = 120.f;
 
-		g_cl.m_cmd->m_view_angles.y = g_csgo.m_globals->m_curtime;
+		// base yaw
+		yaw = m_direction;
+
+		// side logic
+		side = m_desync_side;
+		if (m_flip)
+			side *= -1;
+
+		// ---------------------------------------
+		// APPLY REAL / FAKE SPLIT FIRST
+		// ---------------------------------------
+		if (*g_cl.m_packet)
+			yaw += desync * side;   // fake
+		else
+			yaw -= desync * side;   // real
+
+		// ---------------------------------------
+		// FAKE FLICK (PUT YOUR CODE HERE)
+		// ---------------------------------------
+
+		// cooldown so it doesn't spam
+		if (m_fake_flick_cooldown > 0)
+			m_fake_flick_cooldown--;
+
+		// trigger flick randomly
+		if (m_fake_flick_cooldown == 0 && (rand() % 30) == 0) {
+			m_fake_flick_ticks = 1 + (rand() % 2);
+			m_fake_flick_cooldown = 20 + (rand() % 20);
+		}
+
+		// ONLY modify FAKE SIDE
+		if (*g_cl.m_packet && m_fake_flick_ticks > 0) {
+			yaw += (rand() % 2) ? 120.f : -120.f;
+			m_fake_flick_ticks--;
+		}
+		else {
+			// fallback jitter
+			static bool flip = false;
+			flip = !flip;
+
+			yaw += flip ? 30.f : -30.f;
+		}
+
+		// ---------------------------------------
+		// OPTIONAL EXTRA BREAK
+		// ---------------------------------------
+		if (m_flip)
+			yaw += 45.f;
+
+		g_cl.m_cmd->m_view_angles.y = yaw;
 		break;
 
 		//schizophrenic random angle generator

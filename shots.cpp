@@ -195,21 +195,19 @@ void Shots::OnImpact( IGameEvent *evt ) {
 
 	// we should have 100% hit this player..
 	// this is a miss due to wrong angles.
-	else if ( trace.m_entity == target ) {
+	else if (trace.m_entity == target) {
 		size_t mode = shot->m_record->m_mode;
 
-		// if we miss a shot on body update.
-		// we can chose to stop shooting at them.
-		if ( mode == Resolver::Modes::RESOLVE_BODY )
+		if (mode == Resolver::Modes::RESOLVE_BODY)
 			++data->m_body_index;
-
-		else if ( mode == Resolver::Modes::RESOLVE_STAND )
+		else if (mode == Resolver::Modes::RESOLVE_STAND)
 			++data->m_stand_index;
-
-		else if ( mode == Resolver::Modes::RESOLVE_STAND2 )
+		else if (mode == Resolver::Modes::RESOLVE_STAND2)
 			++data->m_stand_index2;
 
 		++data->m_missed_shots;
+
+		g_resolver.OnMiss(data);
 
 		float shot_yaw = shot->m_record->m_eye_angles.y;
 		float body_yaw = shot->m_record->m_body;
