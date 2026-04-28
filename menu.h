@@ -33,8 +33,8 @@ public:
 	MultiDropdown baim2;
 	Slider        baim_hp;
 	Keybind       baim_key;
-	Checkbox	  double_tap;
 	Keybind       double_tap_key;
+	Checkbox      speedy_double_tap;
 
 public:
 	void init() {
@@ -136,11 +136,12 @@ public:
 		baim_key.setup(XOR("body aim on key"), XOR("body aim on key"));
 		RegisterElement(&baim_key, 1);
 
-		double_tap.setup(XOR("double tap"), XOR("double_tap"));
-		RegisterElement(&double_tap, 1);
-
 		double_tap_key.setup(XOR("double tap key"), XOR("double_tap_key"));
+		double_tap_key.SetToggleCallback(callbacks::ToggleDoubleTap);
 		RegisterElement(&double_tap_key, 1);
+
+		speedy_double_tap.setup("speedy double tap (glitchy)", XOR("speedy_double_tap"));
+		RegisterElement(&speedy_double_tap, 1);
 	}
 };
 
@@ -724,7 +725,7 @@ public:
 		pen_crosshair.setup(XOR("penetration crosshair"), XOR("pen_xhair"));
 		RegisterElement(&pen_crosshair, 1);
 
-		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency") });
+		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("doubletap")});
 		RegisterElement(&indicators, 1);
 
 		tracers.setup(XOR("grenade simulation"), XOR("tracers"));

@@ -1,4 +1,5 @@
 #include "includes.h"
+#include "minhook.h"
 
 Hooks                g_hooks{ };;
 CustomEntityListener g_custom_entity_listener{ };;
@@ -118,6 +119,11 @@ void Force_proxy( CRecvProxyData *data, Address ptr, Address out ) {
 }
 
 void Hooks::init( ) {
+	MH_Initialize();
+
+	MH_CreateHook(pattern::find(PE::GetModule(HASH("engine.dll")), XOR("55 8B EC 81 EC ? ? ? ? 53 56 57 8B 3D ? ? ? ? 8A")), &CL_Move, reinterpret_cast<void**>(&o_CLMove));
+	MH_EnableHook(MH_ALL_HOOKS);
+
 	// hook wndproc.
 	auto m_hWindow = FindWindowA(XOR("Valve001"), NULL); 
 	m_old_wndproc = (WNDPROC)g_winapi.SetWindowLongA(m_hWindow, GWL_WNDPROC, util::force_cast<LONG>(Hooks::WndProc));

@@ -210,6 +210,29 @@ public:
 	bool CanKnife( LagRecord* record, ang_t angle, bool& stab );
 	bool KnifeTrace( vec3_t dir, bool stab, CGameTrace* trace );
 	bool KnifeIsBehind( LagRecord* record );
+
+	//doubletap stuff
+
+	bool m_double_tap;
+
+	void DoubleTap();
+	bool m_shifting;
+	bool m_charged;
+	int m_shift_cmd;
+	int m_shift_tickbase;
+	int m_charged_ticks;
+	int m_charge_timer;
+	int m_tick_to_shift;
+	int m_tick_to_shift_alternate;
+	int m_tick_to_recharge;
+	bool m_shifted;
 };
+
+//dt
+inline Aimbot g_tickshift;
+
+typedef void(*CLMove_t)(float accumulated_extra_samples, bool bFinalTick);
+inline CLMove_t o_CLMove;
+void CL_Move(float accumulated_extra_samples, bool bFinalTick);
 
 extern Aimbot g_aimbot;

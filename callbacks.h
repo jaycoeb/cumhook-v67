@@ -6,6 +6,8 @@ namespace callbacks {
 	void ToggleThirdPerson( );
 	void ToggleFakeLatency( );
     void ToggleKillfeed( );
+	void ToggleDoubleTap( );
+	bool IsDoubleTapOn( );
 	void SaveHotkeys( );
 	void ConfigLoad1( );
 	void ConfigLoad2( );

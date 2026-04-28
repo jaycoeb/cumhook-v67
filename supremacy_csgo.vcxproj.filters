@@ -321,8 +321,11 @@
     <ClInclude Include="watermark\watermark.h">
       <Filter>Header Files\menu</Filter>
     </ClInclude>
-<ClInclude Include="watermark.h">
+    <ClInclude Include="watermark.h">
       <Filter>Source Files\watermark</Filter>
+    </ClInclude>
+    <ClInclude Include="minhook.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -485,7 +488,10 @@
     <ClCompile Include="watermark\watermark.cpp">
       <Filter>Source Files\watermark</Filter>
     </ClCompile>
-</ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="..\..\cumhook-main\cumhook-main\minhook.lib">
+      <Filter>Source Files</Filter>
+    </Library>
+  </ItemGroup>
 </Project>
-
-

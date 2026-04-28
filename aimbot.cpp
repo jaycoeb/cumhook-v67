@@ -2,6 +2,30 @@
 
 Aimbot g_aimbot{ };;
 
+void CL_Move(float accumulated_extra_samples, bool bFinalTick) {
+	if (g_tickshift.m_tick_to_recharge > 0) {
+		g_tickshift.m_tick_to_recharge--;
+		g_tickshift.m_charged_ticks++;
+		if (g_tickshift.m_tick_to_recharge == 0) {
+			g_tickshift.m_charged = true;
+		}
+		return; // increment ticksforprocessing by not creating any usercmd's
+	}
+
+	o_CLMove(accumulated_extra_samples, bFinalTick);
+	g_tickshift.m_shifted = false;
+	if (g_tickshift.m_tick_to_shift > 0) {
+		g_tickshift.m_shifting = true;
+		for (; g_tickshift.m_tick_to_shift > 0; g_tickshift.m_tick_to_shift--) {
+			o_CLMove(accumulated_extra_samples, bFinalTick);
+			g_tickshift.m_charged_ticks--;
+		}
+		g_tickshift.m_charged = false; // were just going to assume. not correct.
+		g_tickshift.m_shifting = false;
+		g_tickshift.m_shifted = true;
+	}
+}
+
 void AimPlayer::UpdateAnimations(LagRecord* record) {
 	CCSGOPlayerAnimState* state = m_player->m_PlayerAnimState();
 	if (!state)
@@ -1174,5 +1198,50 @@ void Aimbot::NoSpread() {
 
 	// compensate.
 	g_cl.m_cmd->m_view_angles -= { -math::rad_to_deg(std::atan(spread.length_2d())), 0.f, math::rad_to_deg(std::atan2(spread.x, spread.y)) };
+}
+
+void Aimbot::DoubleTap() {
+	if (callbacks::IsDoubleTapOn()) //this is lowkey retarded and i have no idea how it actually works why doesnt the fucking callback just set the double tap bool to true instead of this
+		m_double_tap = true;
+	else
+		m_double_tap = false;
+
+	if (!m_double_tap && m_charged) {
+		m_charge_timer = 0;
+		if (g_menu.main.aimbot.speedy_double_tap.get())
+			m_tick_to_shift = 15;
+		else
+			m_tick_to_shift = 13;
+
+	}
+	if (!m_double_tap) return;
+	if (!m_charged) {
+		if (m_charge_timer > game::TIME_TO_TICKS(.8)) { // 0.8 seconds after shifting, lets recharge
+			if (g_menu.main.aimbot.speedy_double_tap.get())
+				m_tick_to_recharge = 16; //ts retarded
+			else
+				m_tick_to_recharge = 14;
+		}
+		else {
+			if (!g_aimbot.m_target) {
+				m_charge_timer++;
+			}
+			if (g_cl.m_cmd->m_buttons & IN_ATTACK && g_cl.m_weapon_fire) {
+				m_charge_timer = 0;
+			}
+		}
+	}
+
+	if (g_cl.m_cmd->m_buttons & IN_ATTACK && g_cl.m_weapon_fire && m_charged) {
+		// shot.. lets shift tickbase back so we can dt.
+		m_charge_timer = 0;
+		m_tick_to_shift = 15;
+		m_shift_cmd = g_cl.m_cmd->m_command_number;
+		m_shift_tickbase = g_cl.m_local->m_nTickBase();
+		*g_cl.m_packet = false;
+	}
+	if (!m_charged) {
+		m_charged_ticks = 0;
+	}
 }
 
