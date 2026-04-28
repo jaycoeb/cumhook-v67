@@ -60,6 +60,7 @@ public:
 	void OnShotFire( Player* target, float damage, int bullets, LagRecord* record );
 	void OnImpact( IGameEvent* evt );
 	void OnHurt( IGameEvent* evt );
+	void OnFrameStage();
 
 public:
 	std::deque< ShotRecord >          m_shots;

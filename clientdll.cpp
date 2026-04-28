@@ -95,6 +95,8 @@ void Hooks::FrameStageNotify( Stage_t stage ) {
 	}
 
 	else if( stage == FRAME_NET_UPDATE_END ) {
+
+		g_shots.OnFrameStage();
         // restore non-compressed netvars.
 		g_netdata.apply( );
 
@@ -108,4 +110,72 @@ void Hooks::FrameStageNotify( Stage_t stage ) {
 			data->OnNetUpdate( player );
 		}
 	}
+}
+
+void WriteUserCmd(bf_write* buf, CUserCmd* incmd, CUserCmd* outcmd) {
+	static auto WriteUsercmdF = pattern::find(g_csgo.m_client_dll, XOR("55 8B EC 83 E4 F8 51 53 56 8B D9 8B 0D"));
+
+	__asm
+	{
+		mov ecx, buf
+		mov edx, incmd
+		push outcmd
+		call WriteUsercmdF
+		add esp, 4
+	}
+}
+
+bool Hooks::WriteUsercmdDeltaToBuffer(int slot, bf_write* buf, int from, int to, bool isnewcommand) {
+	if (g_cl.m_processing && g_csgo.m_engine->IsInGame()) {
+		if (g_csgo.m_gamerules->m_bFreezePeriod())
+			return g_hooks.m_client.GetOldMethod< WriteUsercmdDeltaToBuffer_t >(CHLClient::USRCMDTODELTABUFFER)(this, slot, buf, from, to, isnewcommand);
+
+		if (g_cl.m_tick_to_shift <= 0 || g_csgo.m_cl->m_choked_commands > 3)
+			return g_hooks.m_client.GetOldMethod< WriteUsercmdDeltaToBuffer_t >(CHLClient::USRCMDTODELTABUFFER)(this, slot, buf, from, to, isnewcommand);
+
+		if (from != -1)
+			return true;
+
+		uintptr_t stackbase;
+		__asm mov stackbase, ebp;
+		CCLCMsg_Move_t* msg = reinterpret_cast<CCLCMsg_Move_t*>(stackbase + 0xFCC);
+		auto net_channel = *reinterpret_cast <INetChannel**> (reinterpret_cast <uintptr_t> (g_csgo.m_cl) + 0x9C);
+		int32_t new_commands = msg->new_commands;
+
+		int32_t next_cmdnr = g_csgo.m_cl->m_last_outgoing_command + g_csgo.m_cl->m_choked_commands + 1;
+		int32_t total_new_commands = std::min(g_cl.m_tick_to_shift, 17);
+		g_cl.m_tick_to_shift -= total_new_commands;
+
+		from = -1;
+		msg->new_commands = total_new_commands;
+		msg->backup_commands = 0;
+
+		for (to = next_cmdnr - new_commands + 1; to <= next_cmdnr; to++) {
+			if (!g_hooks.m_client.GetOldMethod< WriteUsercmdDeltaToBuffer_t >(CHLClient::USRCMDTODELTABUFFER)(this, slot, buf, from, to, isnewcommand))
+				return false;
+
+			from = to;
+		}
+
+		CUserCmd* last_realCmd = g_csgo.m_input->GetUserCmd(slot, from);
+		CUserCmd fromCmd;
+
+		if (last_realCmd)
+			fromCmd = *last_realCmd;
+
+		CUserCmd toCmd = fromCmd;
+		toCmd.m_command_number++;
+		toCmd.m_tick++;
+
+		for (int i = new_commands; i <= total_new_commands; i++) {
+			WriteUserCmd(buf, &toCmd, &fromCmd);
+			fromCmd = toCmd;
+			toCmd.m_command_number++;
+			toCmd.m_tick++;
+		}
+		return true;
+
+	}
+	else
+		return g_hooks.m_client.GetOldMethod< WriteUsercmdDeltaToBuffer_t >(CHLClient::USRCMDTODELTABUFFER)(this, slot, buf, from, to, isnewcommand);
 }

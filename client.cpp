@@ -230,7 +230,7 @@ void Client::DoMove() {
                     !(g_cl.m_flags & FL_FROZEN);
 
     UpdateRevolverCock();
-    m_weapon_fire = CanFireWeapon();
+    m_weapon_fire = CanFireWeapon(g_csgo.m_globals->m_curtime);
   }
 
   // last tick defuse.
@@ -490,7 +490,15 @@ void Client::print(const std::string text, ...) {
   g_csgo.m_cvar->ConsoleColorPrintf(colors::white, buf.c_str());
 }
 
-bool Client::CanFireWeapon() {
+bool Client::CanFireWeapon(float curtime) {
+    auto server_time = game::TICKS_TO_TIME(g_cl.m_local->m_nTickBase());
+
+    if (server_time < g_cl.m_weapon->m_flNextPrimaryAttack())
+        return false;
+
+    if (server_time < g_cl.m_local->m_flNextAttack())
+        return false;
+
   // the player cant fire.
   if (!m_player_fire)
     return false;
@@ -506,7 +514,7 @@ bool Client::CanFireWeapon() {
   if ((m_weapon_id == GLOCK || m_weapon_id == FAMAS) &&
       m_weapon->m_iBurstShotsRemaining() > 0) {
     // new burst shot is coming out.
-    if (g_csgo.m_globals->m_curtime >= m_weapon->m_fNextBurstShot())
+    if (curtime >= m_weapon->m_fNextBurstShot())
       return true;
   }
 
@@ -517,14 +525,14 @@ bool Client::CanFireWeapon() {
     // mouse1.
     if (!m_revolver_fire) {
       if ((act == 185 || act == 193) && m_revolver_cock == 0)
-        return g_csgo.m_globals->m_curtime >= m_weapon->m_flNextPrimaryAttack();
+        return curtime >= m_weapon->m_flNextPrimaryAttack();
 
       return false;
     }
   }
 
   // yeez we have a normal gun.
-  if (g_csgo.m_globals->m_curtime >= m_weapon->m_flNextPrimaryAttack())
+  if (curtime >= m_weapon->m_flNextPrimaryAttack())
     return true;
 
   return false;

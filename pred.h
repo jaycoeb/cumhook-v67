@@ -7,6 +7,7 @@ public:
 	bool m_in_prediction;
 	int m_tickbase;
 	vec3_t m_velocity;
+	bool m_first_time_predicted;
 
 public:
 	void update( );
