@@ -476,11 +476,10 @@ void Aimbot::init() {
 	m_targets.clear();
 
 	m_target = nullptr;
-	m_aim = vec3_t{ };
-	m_angle = ang_t{ };
+	m_aim = vec3_t{};
+	m_angle = ang_t{};
 	m_damage = 0.f;
 	m_record = nullptr;
-	m_stop = false;
 
 	m_best_dist = std::numeric_limits< float >::max();
 	m_best_fov = 180.f + 1.f;
@@ -748,6 +747,7 @@ bool Aimbot::CheckHitchance(Player* player, const ang_t& angle) {
 }
 
 bool AimPlayer::SetupHitboxPoints(LagRecord* record, BoneArray* bones, int index, std::vector< vec3_t >& points) {
+
 	// reset points.
 	points.clear();
 
