@@ -43,6 +43,10 @@ public:
 		m_elements.push_back( element );
 	}
 
+	__forceinline const std::vector< Element* >& GetElements( ) const {
+		return m_elements;
+	}
+
 	Element* GetElementByName( const std::string& file_id ) const {
 		auto it = std::find_if( m_elements.begin( ), m_elements.end( ), 
 		[ &file_id ]( Element* elem ) {
