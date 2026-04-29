@@ -95,6 +95,7 @@ public:
 		RegisterElement( &weapon_cfg );
 
 		m_last_weapon_cfg = weapon_cfg.get( );
+		SaveState( m_weapon_states[ m_last_weapon_cfg ] );
 
 		silent.setup(XOR("silent aimbot"), XOR("silent"));
 		RegisterElement(&silent);

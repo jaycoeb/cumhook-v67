@@ -210,6 +210,67 @@ void Config::load( const Form* form, const std::string& name ) {
 			}
 		}
 	}
+
+	// restore weapon config states for aimbot tab (if present).
+	try {
+       auto it_states = config.find( XOR( "weapon_cfg_states" ) );
+		if( it_states != config.end( ) ) {
+			auto& arr = it_states.value( );
+			if( arr.is_array( ) ) {
+				AimbotTab* tab = nullptr;
+				if( form ) {
+					Tab* t = form->GetTabByName( XOR( "aimbot" ) );
+					if( t )
+						tab = ( AimbotTab* )t;
+				}
+
+				if( tab ) {
+					for( size_t i = 0; i < tab->m_weapon_states.size( ) && i < arr.size( ); ++i ) {
+						const auto& s = arr[ i ];
+						if( !s.is_object( ) )
+							continue;
+
+						auto& st = tab->m_weapon_states[ i ];
+						st.initialized = s.value( XOR( "initialized" ), false );
+						if( !st.initialized )
+							continue;
+
+						st.silent = s.value( XOR( "silent" ), false );
+						st.selection = s.value( XOR( "selection" ), 0 );
+						st.fov = s.value( XOR( "fov" ), false );
+						st.fov_amount = s.value( XOR( "fov_amount" ), 0.f );
+						st.hitbox = s.value( XOR( "hitbox" ), std::vector< size_t >{} );
+						st.hitbox_history = s.value( XOR( "hitbox_history" ), std::vector< size_t >{} );
+						st.multipoint = s.value( XOR( "multipoint" ), std::vector< size_t >{} );
+						st.scale = s.value( XOR( "scale" ), 0.f );
+						st.body_scale = s.value( XOR( "body_scale" ), 0.f );
+						st.minimal_damage = s.value( XOR( "minimal_damage" ), 0.f );
+						st.minimal_damage_hp = s.value( XOR( "minimal_damage_hp" ), false );
+						st.penetrate = s.value( XOR( "penetrate" ), false );
+						st.penetrate_minimal_damage = s.value( XOR( "penetrate_minimal_damage" ), 0.f );
+						st.penetrate_minimal_damage_hp = s.value( XOR( "penetrate_minimal_damage_hp" ), false );
+						st.knifebot = s.value( XOR( "knifebot" ), false );
+						st.zeusbot = s.value( XOR( "zeusbot" ), false );
+						st.zoom = s.value( XOR( "zoom" ), 0 );
+						st.nospread = s.value( XOR( "nospread" ), false );
+						st.norecoil = s.value( XOR( "norecoil" ), false );
+						st.hitchance = s.value( XOR( "hitchance" ), false );
+						st.hitchance_amount = s.value( XOR( "hitchance_amount" ), 0.f );
+						st.lagfix = s.value( XOR( "lagfix" ), false );
+						st.correct = s.value( XOR( "correct" ), false );
+						st.baim1 = s.value( XOR( "baim1" ), std::vector< size_t >{} );
+						st.baim2 = s.value( XOR( "baim2" ), std::vector< size_t >{} );
+						st.baim_hp = s.value( XOR( "baim_hp" ), 0.f );
+						st.baim_key = s.value( XOR( "baim_key" ), -1 );
+						st.double_tap = s.value( XOR( "double_tap" ), false );
+						st.double_tap_key = s.value( XOR( "double_tap_key" ), -1 );
+					}
+				}
+			}
+		}
+	}
+	catch( ... ) {
+	}
 }
 
 void Config::save( const Form* form, const std::string& name ) {
@@ -301,6 +362,59 @@ void Config::save( const Form* form, const std::string& name ) {
 				break;
 			}
 		}
+	}
+
+	// store weapon config states for aimbot tab.
+	try {
+		AimbotTab* tab = nullptr;
+		if( form ) {
+			Tab* t = form->GetTabByName( XOR( "aimbot" ) );
+			if( t )
+				tab = ( AimbotTab* )t;
+		}
+
+		if( tab ) {
+          nlohmann::json arr = nlohmann::json::array( );
+
+			for( const auto& st : tab->m_weapon_states ) {
+				nlohmann::json s{};
+				s[ XOR( "initialized" ) ] = st.initialized;
+				s[ XOR( "silent" ) ] = st.silent;
+				s[ XOR( "selection" ) ] = st.selection;
+				s[ XOR( "fov" ) ] = st.fov;
+				s[ XOR( "fov_amount" ) ] = st.fov_amount;
+				s[ XOR( "hitbox" ) ] = st.hitbox;
+				s[ XOR( "hitbox_history" ) ] = st.hitbox_history;
+				s[ XOR( "multipoint" ) ] = st.multipoint;
+				s[ XOR( "scale" ) ] = st.scale;
+				s[ XOR( "body_scale" ) ] = st.body_scale;
+				s[ XOR( "minimal_damage" ) ] = st.minimal_damage;
+				s[ XOR( "minimal_damage_hp" ) ] = st.minimal_damage_hp;
+				s[ XOR( "penetrate" ) ] = st.penetrate;
+				s[ XOR( "penetrate_minimal_damage" ) ] = st.penetrate_minimal_damage;
+				s[ XOR( "penetrate_minimal_damage_hp" ) ] = st.penetrate_minimal_damage_hp;
+				s[ XOR( "knifebot" ) ] = st.knifebot;
+				s[ XOR( "zeusbot" ) ] = st.zeusbot;
+				s[ XOR( "zoom" ) ] = st.zoom;
+				s[ XOR( "nospread" ) ] = st.nospread;
+				s[ XOR( "norecoil" ) ] = st.norecoil;
+				s[ XOR( "hitchance" ) ] = st.hitchance;
+				s[ XOR( "hitchance_amount" ) ] = st.hitchance_amount;
+				s[ XOR( "lagfix" ) ] = st.lagfix;
+				s[ XOR( "correct" ) ] = st.correct;
+				s[ XOR( "baim1" ) ] = st.baim1;
+				s[ XOR( "baim2" ) ] = st.baim2;
+				s[ XOR( "baim_hp" ) ] = st.baim_hp;
+				s[ XOR( "baim_key" ) ] = st.baim_key;
+				s[ XOR( "double_tap" ) ] = st.double_tap;
+				s[ XOR( "double_tap_key" ) ] = st.double_tap_key;
+				arr.push_back( s );
+			}
+
+			config[ XOR( "weapon_cfg_states" ) ] = arr;
+		}
+	}
+	catch( ... ) {
 	}
 
 	stream << crypto::base64_encode( config.dump( ) );
