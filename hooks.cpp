@@ -179,6 +179,14 @@ void Hooks::init( ) {
 	m_material_system.init( g_csgo.m_material_system );
 	m_material_system.add( IMaterialSystem::OVERRIDECONFIG, util::force_cast( &Hooks::OverrideConfig ) );
 
+	// chat color hook - pattern: 53 8B D9 85 DB 79 11
+	Address chatcolor_addr = pattern::find( g_csgo.m_client_dll, XOR( "53 8B D9 85 DB 79 11" ) );
+	if ( chatcolor_addr ) {
+		m_ChatColor_original = chatcolor_addr.as< ChatColor_t >( );
+		// VMT hook setup for ChatColor would go here if it was in a VTable
+		// Since it's a direct function, we'll use a different approach below
+	}
+
 	m_fire_bullets.init( g_csgo.TEFireBullets );
 	m_fire_bullets.add( 7, util::force_cast( &Hooks::PostDataUpdate ) );
 
@@ -201,4 +209,24 @@ void Hooks::init( ) {
 	g_netvars.SetProxy( HASH( "DT_CSPlayer" ), HASH( "m_flLowerBodyYawTarget" ), Body_proxy, m_Body_original );
 	g_netvars.SetProxy( HASH( "DT_CSRagdoll" ), HASH( "m_vecForce" ), Force_proxy, m_Force_original );
 	g_netvars.SetProxy( HASH( "DT_CSRagdoll" ), HASH( "m_flAbsYaw" ), AbsYaw_proxy, m_AbsYaw_original );
+}
+
+const wchar_t* Hooks::ChatColor( int32_t color_index ) {
+	// Custom chat colors
+	if ( color_index == 0xE ) {
+		static const wchar_t color[] = L"#cb0adc";
+		return color;
+	}
+
+	if ( color_index == 0x0F ) {
+		static const wchar_t color[] = L"#cb0adc";
+		return color;
+	}
+
+	// Call original function
+	if ( m_ChatColor_original ) {
+		return m_ChatColor_original( color_index );
+	}
+
+	return L"";
 }

@@ -25,6 +25,7 @@ public:
 	using ClearNotices_t = void(__thiscall *)(KillFeed_t *);
 	using AddListenerEntity_t = void(__stdcall *)(IEntityListener *);
 	using GetShotgunSpread_t = void(__stdcall *)(int, int, int, float *, float *);
+	using ChatColor_t = const wchar_t*(__thiscall *)(int32_t);
 
 public:
 	bool m_done;

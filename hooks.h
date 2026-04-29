@@ -52,6 +52,7 @@ public:
 	using OverrideConfig_t             = bool( __thiscall* )( void*, MaterialSystem_Config_t*, bool );
 	using PostDataUpdate_t             = void( __thiscall* )( void*, DataUpdateType_t );
 	using TempEntities_t               = bool( __thiscall* )( void*, void * );
+	using ChatColor_t                  = const wchar_t*( __thiscall* )( int32_t );
 	using EmitSound_t                  = void( __thiscall* )( void*, IRecipientFilter&, int, int, const char*, unsigned int, const char*, float, float, int, int, int, const vec3_t*, const vec3_t*, void*, bool, float, int );
 	// using PreDataUpdate_t            = void( __thiscall* )( void*, DataUpdateType_t );
 
@@ -66,7 +67,7 @@ public:
 	void                     LevelInitPreEntity( const char* map );
 	void                     FrameStageNotify( Stage_t stage );
 	void                     UpdateClientSideAnimation( );
-    Weapon*                  GetActiveWeapon( );
+	Weapon*                  GetActiveWeapon( );
 	bool                     InPrediction( );
 	bool                     ShouldDrawParticles( );
 	bool                     ShouldDrawFog( );
@@ -90,11 +91,12 @@ public:
 	void                     EmitSound( IRecipientFilter& filter, int iEntIndex, int iChannel, const char* pSoundEntry, unsigned int nSoundEntryHash, const char* pSample, float flVolume, float flAttenuation, int nSeed, int iFlags, int iPitch, const vec3_t* pOrigin, const vec3_t* pDirection, void* pUtlVecOrigins, bool bUpdatePositions, float soundtime, int speakerentity );
 	void                     RenderSmokeOverlay( bool unk );
 	void                     OnRenderStart( );
-    void                     RenderView( const CViewSetup &view, const CViewSetup &hud_view, int clear_flags, int what_to_draw );
+	void                     RenderView( const CViewSetup &view, const CViewSetup &hud_view, int clear_flags, int what_to_draw );
 	void                     Render2DEffectsPostHUD( const CViewSetup& setup );
 	CMatchSessionOnlineHost* GetMatchSession( );
 	bool                     OverrideConfig( MaterialSystem_Config_t* config, bool update );
 	void                     PostDataUpdate( DataUpdateType_t type );
+	const wchar_t*           ChatColor( int32_t color_index );
 
 	static LRESULT WINAPI WndProc( HWND wnd, uint32_t msg, WPARAM wp, LPARAM lp );
 
@@ -137,8 +139,11 @@ public:
 	// netvar proxies.
 	RecvVarProxy_t m_Pitch_original;
 	RecvVarProxy_t m_Body_original;
-    RecvVarProxy_t m_Force_original;
+	RecvVarProxy_t m_Force_original;
 	RecvVarProxy_t m_AbsYaw_original;
+
+	// chat color hook.
+	ChatColor_t m_ChatColor_original;
 };
 
 // note - dex; these are defined in player.cpp.

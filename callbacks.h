@@ -56,6 +56,8 @@ namespace callbacks {
 	bool IsConfig5( );
 	bool IsConfig6( );
 
+	void ChatPrint( const char* format, ... );
+
 	// weapon cfgs.
 	bool DEAGLE( );
 	bool ELITE( );
