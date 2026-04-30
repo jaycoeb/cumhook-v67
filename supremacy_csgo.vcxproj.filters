@@ -490,7 +490,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\cumhook-main\cumhook-main\minhook.lib">
+    <Library Include="minhook.lib">
       <Filter>Source Files</Filter>
     </Library>
   </ItemGroup>

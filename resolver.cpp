@@ -466,16 +466,22 @@ void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
 	if( g_menu.main.config.mode.get( ) == 1 )
 		record->m_eye_angles.x = 90.f;
 
-	// we arrived here we can do the acutal resolve.
-	if( record->m_mode == Modes::RESOLVE_WALK ) 
-		ResolveWalk( data, record );
+	// if random resolver is enabled, just randomize the yaw and be done with it
+	if (g_menu.main.aimbot.random_resolver.get()){
+		record->m_eye_angles.y = rand() % 360;
+    }
+    else {
+        record->m_eye_angles.y = SelectBestYaw(data, record);
+        // we arrived here we can do the acutal resolve.
+        if (record->m_mode == Modes::RESOLVE_WALK)
+            ResolveWalk(data, record);
 
-	else if( record->m_mode == Modes::RESOLVE_STAND )
-		ResolveStand( data, record, player->m_PlayerAnimState( ) );
+        else if (record->m_mode == Modes::RESOLVE_STAND)
+            ResolveStand(data, record, player->m_PlayerAnimState());
 
-	else if( record->m_mode == Modes::RESOLVE_AIR )
-		ResolveAir( data, record );
-
+        else if (record->m_mode == Modes::RESOLVE_AIR)
+            ResolveAir(data, record);
+    }
 	// normalize the eye angles, doesn't really matter but its clean.
 	math::NormalizeAngle( record->m_eye_angles.y );
 

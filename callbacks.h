@@ -24,6 +24,7 @@ namespace callbacks {
 	bool IsPenetrationOn( );
 	bool IsMultipointOn( );
 	bool IsMultipointBodyOn( );
+	bool IsResolverOn( );
 
 	bool IsAntiAimModeStand( );
 	bool HasStandYaw( );

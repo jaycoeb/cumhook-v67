@@ -299,7 +299,10 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	{
 		if (hp < 1)
 		{
-
+			if (g_menu.main.aimbot.random_resolver.get()) {
+				g_csgo.m_engine->ExecuteClientCmd(XOR("say resolved by cumhook's random resolver"));
+			}
+			else {
 				switch ((rand() % 20) + 1) {
 
 				case 1:
@@ -382,6 +385,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 					g_csgo.m_engine->ExecuteClientCmd(XOR("say say"));
 					break;
 				}
+			}
 			
 		}
 	}

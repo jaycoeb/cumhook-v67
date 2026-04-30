@@ -107,6 +107,10 @@ bool callbacks::IsHitchanceOn( ) {
 	return g_menu.main.aimbot.hitchance.get( );
 }
 
+bool callbacks::IsResolverOn() {
+	return g_menu.main.aimbot.correct.get();
+}
+
 bool callbacks::IsPenetrationOn( ) {
 	return g_menu.main.aimbot.penetrate.get( );
 }

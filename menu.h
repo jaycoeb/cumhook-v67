@@ -29,6 +29,7 @@ public:
 	Slider	      hitchance_amount;
 	Checkbox      lagfix;
 	Checkbox	  correct;
+	Checkbox	  random_resolver;
 	MultiDropdown baim1;
 	MultiDropdown baim2;
 	Slider        baim_hp;
@@ -120,8 +121,12 @@ public:
 		lagfix.setup(XOR("predict fake-lag"), XOR("lagfix"));
 		RegisterElement(&lagfix, 1);
 
-		correct.setup(XOR("correct anti-aim"), XOR("correct"));
+		correct.setup(XOR("resolver"), XOR("correct"));
 		RegisterElement(&correct, 1);
+
+		random_resolver.setup(XOR("random resolver"), XOR("random_resolver"));
+		random_resolver.AddShowCallback(callbacks::IsResolverOn);
+		RegisterElement(&random_resolver, 1);
 
 		baim1.setup(XOR("prefer body aim"), XOR("baim1"), { XOR("always"), XOR("lethal"), XOR("lethal x2"), XOR("fake"), XOR("in air") });
 		RegisterElement(&baim1, 1);

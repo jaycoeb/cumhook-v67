@@ -270,7 +270,7 @@
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Library Include="..\..\cumhook-main\cumhook-main\minhook.lib" />
+    <Library Include="minhook.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
