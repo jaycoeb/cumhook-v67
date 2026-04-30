@@ -4,6 +4,7 @@ namespace callbacks {
 	void SkinUpdate( );
 	void ForceFullUpdate( );
 	void ToggleThirdPerson( );
+	void ToggleMinDamageOverride( );
 	void ToggleFakeLatency( );
     void ToggleKillfeed( );
 	void ToggleDoubleTap( );
@@ -22,6 +23,7 @@ namespace callbacks {
 	bool IsFovOn( );
 	bool IsHitchanceOn( );
 	bool IsPenetrationOn( );
+	bool IsMinimumDamageOverrideOn( );
 	bool IsMultipointOn( );
 	bool IsMultipointBodyOn( );
 	bool IsResolverOn( );

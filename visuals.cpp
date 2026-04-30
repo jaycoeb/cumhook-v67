@@ -342,6 +342,15 @@ void Visuals::StatusIndicators( ) {
 		indicators.push_back( ind );
 	}
 
+	// MINDMG
+	if( g_menu.main.visuals.indicators.get( 3 ) ) {
+			Indicator_t ind{ };
+			ind.color = g_aimbot.m_min_dmg_override ? 0xff15c27b : 0xff0000ff;
+			ind.text = XOR("DMG - ") + std::to_string(g_menu.main.aimbot.minimum_damage_override_hp.get());
+
+			indicators.push_back(ind);		
+	}
+
 	if( indicators.empty( ) )
 		return;
 

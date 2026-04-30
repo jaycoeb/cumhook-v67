@@ -920,7 +920,11 @@ bool AimPlayer::GetBestAimPosition(vec3_t& aim, float& damage, LagRecord* record
 	}
 
 	else {
-		dmg = g_menu.main.aimbot.minimal_damage.get();
+		if (g_aimbot.m_min_dmg_override)
+			dmg = g_menu.main.aimbot.minimum_damage_override.get();
+		else
+			dmg = g_menu.main.aimbot.minimal_damage.get();
+
 		if (g_menu.main.aimbot.minimal_damage_hp.get())
 		{
 			//std::ceil((dmg / 100.f) * hp);
@@ -932,7 +936,11 @@ bool AimPlayer::GetBestAimPosition(vec3_t& aim, float& damage, LagRecord* record
 				dmg = std::ceil((dmg / 100.f) * hp);
 		}
 
-		pendmg = g_menu.main.aimbot.penetrate_minimal_damage.get();
+		if (g_aimbot.m_min_dmg_override)
+			pendmg = g_menu.main.aimbot.minimum_damage_override.get();
+		else
+			pendmg = g_menu.main.aimbot.penetrate_minimal_damage.get();
+
 		if (g_menu.main.aimbot.penetrate_minimal_damage_hp.get())
 		{
 			//std::ceil((pendmg / 100.f) * hp);

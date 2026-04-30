@@ -17,7 +17,10 @@ public:
 	Checkbox	  minimal_damage_hp;
 	Checkbox	  penetrate;
 	Slider		  penetrate_minimal_damage;
+	Keybind		  minimum_damage_override_key;
 	Checkbox	  penetrate_minimal_damage_hp;
+	Checkbox	  minimum_damage_override;
+	Slider		  minimum_damage_override_hp;
 	Checkbox      knifebot;
 	Checkbox	  zeusbot;
 
@@ -91,6 +94,18 @@ public:
 		penetrate_minimal_damage_hp.setup(XOR("scale penetration damage on hp"), XOR("penetrate_minimal_damage_hp"));
 		penetrate_minimal_damage_hp.AddShowCallback(callbacks::IsPenetrationOn);
 		RegisterElement(&penetrate_minimal_damage_hp);
+
+		minimum_damage_override.setup(XOR("minimum damage override"), XOR("minimum_damage_override"));
+		RegisterElement(&minimum_damage_override);
+
+		minimum_damage_override_key.setup(XOR("min damage override (toggle)"), XOR("minimum_damage_override_key"));
+		minimum_damage_override_key.AddShowCallback(callbacks::IsMinimumDamageOverrideOn);
+		minimum_damage_override_key.SetToggleCallback(callbacks::ToggleMinDamageOverride);
+		RegisterElement(&minimum_damage_override_key);
+
+		minimum_damage_override_hp.setup("", XOR("minimum_damage_override_hp"), 1.f, 100.f, false, 0, 10.f, 1.f);
+		minimum_damage_override_hp.AddShowCallback(callbacks::IsMinimumDamageOverrideOn);
+		RegisterElement(&minimum_damage_override_hp);
 
 		knifebot.setup(XOR("aimbot with knife"), XOR("knifebot"));
 		RegisterElement(&knifebot);
@@ -730,7 +745,7 @@ public:
 		pen_crosshair.setup(XOR("penetration crosshair"), XOR("pen_xhair"));
 		RegisterElement(&pen_crosshair, 1);
 
-		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("doubletap")});
+		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("min damage override")});
 		RegisterElement(&indicators, 1);
 
 		tracers.setup(XOR("grenade simulation"), XOR("tracers"));

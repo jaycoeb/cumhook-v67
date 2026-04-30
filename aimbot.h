@@ -153,6 +153,9 @@ public:
 	float m_best_lag;
 	float m_best_height;
 	
+	//
+	bool m_min_dmg_override;
+
 	// found target stuff.
 	Player*    m_target;
 	ang_t      m_angle;

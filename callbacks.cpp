@@ -20,6 +20,10 @@ void callbacks::ToggleThirdPerson( ) {
 	g_visuals.m_thirdperson = !g_visuals.m_thirdperson;
 }
 
+void callbacks::ToggleMinDamageOverride( ) {
+	g_aimbot.m_min_dmg_override = !g_aimbot.m_min_dmg_override;
+}
+
 void callbacks::ToggleFakeLatency( ) {
 	g_aimbot.m_fake_latency = !g_aimbot.m_fake_latency;
 }
@@ -113,6 +117,10 @@ bool callbacks::IsResolverOn() {
 
 bool callbacks::IsPenetrationOn( ) {
 	return g_menu.main.aimbot.penetrate.get( );
+}
+
+bool callbacks::IsMinimumDamageOverrideOn( ) {
+	return g_menu.main.aimbot.minimum_damage_override.get( );
 }
 
 bool callbacks::IsMultipointOn( ) {
