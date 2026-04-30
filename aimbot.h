@@ -215,7 +215,6 @@ public:
 
 	bool m_double_tap;
 
-	void DoubleTap();
 	bool m_shifting;
 	bool m_charged;
 	int m_shift_cmd;
@@ -227,12 +226,5 @@ public:
 	int m_tick_to_recharge;
 	bool m_shifted;
 };
-
-//dt
-inline Aimbot g_tickshift;
-
-typedef void(*CLMove_t)(float accumulated_extra_samples, bool bFinalTick);
-inline CLMove_t o_CLMove;
-void CL_Move(float accumulated_extra_samples, bool bFinalTick);
 
 extern Aimbot g_aimbot;

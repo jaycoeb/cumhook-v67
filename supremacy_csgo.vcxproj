@@ -172,7 +172,6 @@
     <ClInclude Include="matrix.h" />
     <ClInclude Include="memalloc.h" />
     <ClInclude Include="menu.h" />
-    <ClInclude Include="minhook.h" />
     <ClInclude Include="modules.h" />
     <ClInclude Include="movement.h" />
     <ClInclude Include="multidropdown.h" />
@@ -268,9 +267,6 @@
     <ClCompile Include="slider.cpp" />
     <ClCompile Include="visuals.cpp" />
     <ClCompile Include="wndproc.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="minhook.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
