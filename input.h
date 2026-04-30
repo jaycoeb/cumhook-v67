@@ -192,7 +192,7 @@ public:
 		return util::get_method< void( __thiscall* )( decltype( this ) ) >( this, CAMTOFIRSTPERSON )( this );
 	}
 
-	__forceinline CUserCmd* GetUserCmd(int slot, int sequence_number) {
-		return util::get_method< CUserCmd * (__thiscall*)(decltype(this), int, int) >(this, GETUSERCMD)(this, slot, sequence_number);
+	__forceinline CUserCmd* GetUserCmd( int sequence_number ) {
+		return util::get_method< CUserCmd*( __thiscall* )( decltype( this ), int, int ) >( this, GETUSERCMD )( this, -1, sequence_number );
 	}
 };

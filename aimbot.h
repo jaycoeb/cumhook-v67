@@ -49,7 +49,6 @@ public:
 	int       m_shots;
 	int       m_missed_shots;
 	LagRecord m_walk_record;
-	float last_simulation_time = 0.f;
 
 	float     m_body_update;
 	bool      m_moved;

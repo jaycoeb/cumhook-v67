@@ -45,7 +45,7 @@ public:
 	void print( const std::string text, ... );
 
 	// check if we are able to fire this tick.
-	bool CanFireWeapon( float curtime );
+	bool CanFireWeapon( );
 	void UpdateRevolverCock( );
 	void UpdateIncomingSequences( );
 
@@ -62,10 +62,6 @@ public:
 	bool	         m_old_shot;
 	float            m_abs_yaw;
 	float            m_poses[ 24 ];
-
-	int	 m_tick_to_shift;
-	int	 m_tick_to_recharge;
-	bool m_charged;
 
 	// active weapon variables.
 	Weapon*     m_weapon;

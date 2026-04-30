@@ -52,7 +52,6 @@ public:
 	using OverrideConfig_t             = bool( __thiscall* )( void*, MaterialSystem_Config_t*, bool );
 	using PostDataUpdate_t             = void( __thiscall* )( void*, DataUpdateType_t );
 	using TempEntities_t               = bool( __thiscall* )( void*, void * );
-	using WriteUsercmdDeltaToBuffer_t = bool(__thiscall*)(void*, int, bf_write*, int, int, bool);
 	using EmitSound_t                  = void( __thiscall* )( void*, IRecipientFilter&, int, int, const char*, unsigned int, const char*, float, float, int, int, int, const vec3_t*, const vec3_t*, void*, bool, float, int );
 	// using PreDataUpdate_t            = void( __thiscall* )( void*, DataUpdateType_t );
 
@@ -96,7 +95,6 @@ public:
 	CMatchSessionOnlineHost* GetMatchSession( );
 	bool                     OverrideConfig( MaterialSystem_Config_t* config, bool update );
 	void                     PostDataUpdate( DataUpdateType_t type );
-	bool					 WriteUsercmdDeltaToBuffer(int slot, bf_write* buf, int from, int to, bool isnewcommand);
 
 	static LRESULT WINAPI WndProc( HWND wnd, uint32_t msg, WPARAM wp, LPARAM lp );
 

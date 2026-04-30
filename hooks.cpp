@@ -130,7 +130,7 @@ void Hooks::init( ) {
 
 
 	// setup normal VMT hooks.
-	m_panel.init( g_csgo.m_panel );	
+	m_panel.init( g_csgo.m_panel );
 	m_panel.add( IPanel::PAINTTRAVERSE, util::force_cast( &Hooks::PaintTraverse ) );
 
 	m_client.init( g_csgo.m_client );
@@ -139,7 +139,6 @@ void Hooks::init( ) {
 	m_client.add( CHLClient::LEVELSHUTDOWN, util::force_cast( &Hooks::LevelShutdown ) );
 	//m_client.add( CHLClient::INKEYEVENT, util::force_cast( &Hooks::IN_KeyEvent ) );
 	m_client.add( CHLClient::FRAMESTAGENOTIFY, util::force_cast( &Hooks::FrameStageNotify ) );
-	m_client.add(CHLClient::USRCMDTODELTABUFFER, util::force_cast(&Hooks::WriteUsercmdDeltaToBuffer));
 
 	m_engine.init( g_csgo.m_engine );
 	m_engine.add( IVEngineClient::ISCONNECTED, util::force_cast( &Hooks::IsConnected ) );

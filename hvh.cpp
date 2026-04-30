@@ -1360,7 +1360,7 @@ void HVH::SendPacket() {
 		*g_cl.m_packet = true;
 
 	// do not lag while dt.
-	if (callbacks::IsDoubleTapOn())
+	if (false && false) // TODO: Add rapidfire_key and rapidfire to menu
 		*g_cl.m_packet = true;
 
 	// we somehow reached the maximum amount of lag.

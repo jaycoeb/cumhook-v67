@@ -58,8 +58,6 @@ void InputPrediction::run( ) {
 	CMoveData data;
 	std::memset(&data, 0, sizeof(CMoveData));
 
-	m_first_time_predicted = g_csgo.m_prediction->m_first_time_predicted;
-
 	m_in_prediction = g_csgo.m_prediction->m_in_prediction;
 	g_csgo.m_prediction->m_in_prediction = true;
 
@@ -99,7 +97,7 @@ void InputPrediction::run( ) {
 }
 
 void InputPrediction::restore( ) {
-	g_csgo.m_prediction->m_in_prediction = false;
+	g_csgo.m_prediction->m_in_prediction = m_in_prediction;
 
 	*g_csgo.m_nPredictionRandomSeed = -1;
 	g_csgo.m_pPredictionPlayer      = nullptr;
@@ -110,7 +108,4 @@ void InputPrediction::restore( ) {
 
 	g_cl.m_local->m_nTickBase() = m_tickbase;
 	g_cl.m_local->m_vecVelocity() = m_velocity;
-
-	g_csgo.m_prediction->m_first_time_predicted = m_first_time_predicted;
-	g_csgo.m_prediction->m_in_prediction = m_in_prediction;
 }

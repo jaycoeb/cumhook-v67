@@ -50,7 +50,6 @@ public:
 	int     m_tick;
 	int     m_lag;
 	bool    m_dormant;
-	bool    m_can_aim;
 
 	// netvars.
 	float  m_sim_time;
@@ -100,8 +99,7 @@ public:
 		m_fake_walk{ false }, 
 		m_shot{ false }, 
 		m_lag{}, 
-		m_bones{},
-		m_can_aim{ 0 } {}
+		m_bones{} {}
 
 	// ctor.
 	__forceinline LagRecord( Player* player ) : 
@@ -110,8 +108,7 @@ public:
 		m_fake_walk{ false },
 		m_shot{ false }, 
 		m_lag{}, 
-		m_bones{},
-		m_can_aim{ 0 } {
+		m_bones{} {
 
 		store( player );
 	}
@@ -206,34 +203,21 @@ public:
 
 	// function: checks if LagRecord obj is hittable if we were to fire at it now.
 	bool valid( ) {
-		if (!m_can_aim)
-			return false;
+		// use prediction curtime for this.
+		float curtime = game::TICKS_TO_TIME( g_cl.m_local->m_nTickBase( ) );
 
-		if (dormant())
-			return false;
+		// correct is the amount of time we have to correct game time,
+		float correct = g_cl.m_lerp + g_cl.m_latency;
 
+		// stupid fake latency goes into the incoming latency.
+		float in = g_csgo.m_net->GetLatency( INetChannel::FLOW_INCOMING );
+		correct += in;
 
-		if (immune())
-			return false;
+		// check bounds [ 0, sv_maxunlag ]
+		math::clamp( correct, 0.f, g_csgo.sv_maxunlag->GetFloat( ) );
 
-		if (m_broke_lc)
-			return false;
-
-		auto net_channel_info = g_csgo.m_engine->GetNetChannelInfo();
-		if (!net_channel_info)
-			return false;
-
-		auto outgoing = g_cl.m_latency;
-		auto incoming = net_channel_info->GetLatency(INetChannel::FLOW_INCOMING);
-
-		auto correct = std::clamp(outgoing + incoming + g_cl.m_lerp, 0.0f, g_csgo.sv_maxunlag->GetFloat());
-
-		auto curtime = g_cl.m_local->alive() ? game::TICKS_TO_TIME(g_cl.m_local->m_nTickBase()) : g_csgo.m_globals->m_curtime; //-V807
-		auto delta_time = correct - (curtime - m_sim_time);
-
-		if (fabs(delta_time) > 0.2f)
-			return false;
-
-		return true;
+		// calculate difference between tick sent by player and our latency based tick.
+		// ensure this record isn't too old.
+		return std::abs( correct - ( curtime - m_sim_time ) ) < 0.19f;
 	}
 };

@@ -107,7 +107,7 @@ void Shots::OnImpact( IGameEvent *evt ) {
 
 		// get the delta between the current time
 		// and the predicted arrival time of the shot.
-		float delta = std::abs(g_cl.m_local->m_nTickBase() - predicted );
+		float delta = std::abs( time - predicted );
 
 		// fuck this.
 		if ( delta > 1.f )
@@ -410,9 +410,9 @@ void Shots::OnHurt( IGameEvent *evt ) {
 		return;
 
 	// if we hit a player, mark vis impacts.
-	if (!m_vis_impacts.empty()) {
-		for (auto& i : m_vis_impacts) {
-			if (i.m_tickbase == g_csgo.m_globals->m_tick_count)
+	if ( !m_vis_impacts.empty( ) ) {
+		for ( auto &i : m_vis_impacts ) {
+			if ( i.m_tickbase == g_cl.m_local->m_nTickBase( ) )
 				i.m_hit_player = true;
 		}
 	}
@@ -529,22 +529,5 @@ void Shots::OnHurt( IGameEvent *evt ) {
 		//default:
 		//	break;
 		//}
-	}
-}
-
-void Shots::OnFrameStage() {
-
-	if (!g_cl.m_processing || m_shots.empty()) {
-		if (!m_shots.empty())
-			m_shots.clear();
-
-		return;
-	}
-
-	for (auto it = m_shots.begin(); it != m_shots.end();) {
-		if (it->m_time + 1.f + it->m_lat < game::TICKS_TO_TIME(g_cl.m_local->m_nTickBase()))
-			it = m_shots.erase(it);
-		else
-			it = next(it);
 	}
 }

@@ -26,12 +26,6 @@ void CL_Move(float accumulated_extra_samples, bool bFinalTick) {
 	}
 }
 
-bool CanFireWithExploit(int m_iShiftedTick) {
-	// curtime before shift
-	float curtime = game::TICKS_TO_TIME(g_cl.m_local->m_nTickBase() - m_iShiftedTick);
-	return g_cl.CanFireWeapon(curtime);
-}
-
 void AimPlayer::UpdateAnimations(LagRecord* record) {
 	CCSGOPlayerAnimState* state = m_player->m_PlayerAnimState();
 	if (!state)
@@ -262,7 +256,6 @@ void AimPlayer::OnNetUpdate(Player* player) {
 	if (reset) {
 		player->m_bClientSideAnimation() = true;
 		m_records.clear();
-		last_simulation_time = 0;
 		return;
 	}
 
@@ -274,10 +267,8 @@ void AimPlayer::OnNetUpdate(Player* player) {
 
 	// update player ptr if required.
 	// reset player if changed.
-	if (m_player != player) {
+	if (m_player != player)
 		m_records.clear();
-		last_simulation_time = 0;
-	}
 
 	// update player ptr.
 	m_player = player;
@@ -337,9 +328,6 @@ void AimPlayer::OnNetUpdate(Player* player) {
 
 		// create bone matrix for this record.
 		g_bones.setup(m_player, nullptr, current);
-
-		current->m_can_aim = last_simulation_time < player->m_flSimulationTime();
-		last_simulation_time = std::max(last_simulation_time, player->m_flSimulationTime());
 	}
 
 	// no need to store insane amt of data.
@@ -695,7 +683,7 @@ void Aimbot::find() {
 				g_cl.m_cmd->m_buttons |= IN_ATTACK2;
 
 			// left click attack.
-			else if (g_cl.CanFireWeapon(game::TICKS_TO_TIME(g_cl.m_local->m_nTickBase())))
+			else
 				g_cl.m_cmd->m_buttons |= IN_ATTACK;
 		}
 	}
@@ -1163,10 +1151,7 @@ void Aimbot::apply() {
 	// ensure we're attacking.
 	if (attack || attack2) {
 		// choke every shot.
-		if (callbacks::IsDoubleTapOn())
-			*g_cl.m_packet = true;
-		else
-			*g_cl.m_packet = false;
+		*g_cl.m_packet = false;
 
 		if (m_target) {
 			// make sure to aim at un-interpolated data.
@@ -1231,7 +1216,7 @@ void Aimbot::DoubleTap() {
 	}
 	if (!m_double_tap) return;
 	if (!m_charged) {
-		if (m_charge_timer > game::TIME_TO_TICKS(.5)) { // 0.5 seconds after shifting, lets recharge
+		if (m_charge_timer > game::TIME_TO_TICKS(.8)) { // 0.8 seconds after shifting, lets recharge
 			if (g_menu.main.aimbot.speedy_double_tap.get())
 				m_tick_to_recharge = 16; //ts retarded
 			else
