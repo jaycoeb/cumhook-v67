@@ -198,8 +198,7 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
 
     // CENTER penalty (THIS FIXES YOUR MAIN ISSUE)
     if (fabsf(delta) < 20.f) {
-        if (data->m_resolve_history.miss_center >= 1)
-            return -FLT_MAX; // HARD DENY CENTER
+        score -= data->m_resolve_history.miss_center * 120.f;
     }
 
     // RIGHT failed → punish right, boost left
@@ -604,19 +603,19 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         data->m_resolve_history.miss_bruteforce;
 
     if (misses >= 2) {
-        float options[] = {
-            record->m_body + 180.f,
-            record->m_body + 90.f,
-            record->m_body - 90.f
-        };
-
-        for (float yaw : options) {
-            yaw = math::NormalizedAngle(yaw);
-
-            if (!IsAngleRepeated(data, yaw)) {
-                record->m_eye_angles.y = yaw;
-                return;
-            }
+        switch (data->m_shots % 4) {
+        case 0:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body + 180.f);
+            return;
+        case 1:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body + 90.f);
+            return;
+        case 2:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body - 90.f);
+            return;
+        case 3:
+            record->m_eye_angles.y = math::NormalizedAngle(record->m_body);
+            return;
         }
     }
 
@@ -627,9 +626,7 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
 
     float body = record->m_body;
 
-    if (data->m_resolve_history.miss_center < 1)
-        candidates.push_back(body);
-
+    candidates.push_back(body);
     candidates.push_back(body + 180.f);
     candidates.push_back(body + 90.f);
     candidates.push_back(body - 90.f);
