@@ -1,5 +1,8 @@
 #pragma once
 
+// Forward declaration to suppress callbacks during config load
+extern bool g_config_loading;
+
 #define KEYBIND_X_OFFSET      20
 #define KEYBIND_BOX_HEIGHT    20
 #define KEYBIND_ITEM_X_OFFSET 10
@@ -26,12 +29,16 @@ public:
 		m_toggle = t;
 	}
 
+	__forceinline bool callbacks_allowed( ) const {
+		return !g_config_loading;
+	}
+
 	__forceinline void set( int key ) {
 		bool changed = m_key != key;
 
 		m_key = key;
 
-		if( changed && m_callback )
+     if( changed && m_callback && callbacks_allowed( ) )
 			m_callback( );
 	}
 

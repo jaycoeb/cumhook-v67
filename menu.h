@@ -1,9 +1,55 @@
-#pragma once
+﻿#pragma once
+
 
 class AimbotTab : public Tab {
 public:
+  struct WeaponCfgState {
+		bool enable{};
+		bool silent{};
+		size_t selection{};
+		bool fov{};
+		float fov_amount{};
+		std::vector< size_t > hitbox{};
+		std::vector< size_t > hitbox_history{};
+		std::vector< size_t > multipoint{};
+		float scale{};
+		float body_scale{};
+		float minimal_damage{};
+		bool minimal_damage_hp{};
+		bool penetrate{};
+		float penetrate_minimal_damage{};
+		bool penetrate_minimal_damage_hp{};
+		bool knifebot{};
+		bool zeusbot{};
+		size_t zoom{};
+		bool nospread{};
+		bool norecoil{};
+		bool hitchance{};
+		float hitchance_amount{};
+		bool lagfix{};
+		bool correct{};
+		std::vector< size_t > baim1{};
+		std::vector< size_t > baim2{};
+		float baim_hp{};
+		int baim_key{};
+		bool double_tap{};
+		int double_tap_key{};
+		bool initialized{};
+	};
+
+  static void ResetWeaponCfgTab( AimbotTab& tab );
+    static void OnWeaponCfgChanged( );
+
+	void SaveState( WeaponCfgState& out ) const;
+	void LoadState( const WeaponCfgState& in );
+	void ResetForWeaponCfg( );
+
+	std::array< WeaponCfgState, 8 > m_weapon_states{};
+	size_t m_last_weapon_cfg{ 0 };
+
 	// col1.
 	Checkbox	  enable;
+   Dropdown      weapon_cfg;
 	Checkbox	  silent;
 	Dropdown	  selection;
 	Checkbox	  fov;
@@ -48,6 +94,13 @@ public:
 		enable.setup(XOR("enable"), XOR("enable"));
 		RegisterElement(&enable);
 
+		weapon_cfg.setup( XOR( "weapon config" ), XOR( "weapon_cfg" ), { XOR( "autosniper" ), XOR( "awp" ), XOR( "scout" ), XOR( "desert eagle" ), XOR( "dual berettas" ), XOR( "revolver" ), XOR( "shotguns" ), XOR( "smgs" ) } );
+     weapon_cfg.SetCallback( &AimbotTab::OnWeaponCfgChanged );
+		RegisterElement( &weapon_cfg );
+
+		m_last_weapon_cfg = weapon_cfg.get( );
+		SaveState( m_weapon_states[ m_last_weapon_cfg ] );
+
 		silent.setup(XOR("silent aimbot"), XOR("silent"));
 		RegisterElement(&silent);
 
@@ -57,7 +110,7 @@ public:
 		fov.setup(XOR("angle limit"), XOR("fov"));
 		RegisterElement(&fov);
 
-		fov_amount.setup("", XOR("fov_amount"), 1.f, 180.f, false, 0, 180.f, 1.f, XOR(L"�"));
+		fov_amount.setup("", XOR("fov_amount"), 1.f, 180.f, false, 0, 180.f, 1.f, XOR(L"°"));
 		fov_amount.AddShowCallback(callbacks::IsFovOn);
 		RegisterElement(&fov_amount);
 
@@ -165,6 +218,126 @@ public:
 	}
 };
 
+
+inline void AimbotTab::ResetWeaponCfgTab( AimbotTab& tab ) {
+	// keep: enable, weapon_cfg
+	// col1.
+	tab.silent.set( false );
+	tab.selection.set( 0 );
+	tab.fov.set( false );
+	tab.fov_amount.set( 0.f );
+	tab.hitbox.clear( );
+	tab.hitbox_history.clear( );
+	tab.multipoint.clear( );
+	tab.scale.set( 0.f );
+	tab.body_scale.set( 0.f );
+	tab.minimal_damage.set( 0.f );
+	tab.minimal_damage_hp.set( false );
+	tab.penetrate.set( false );
+	tab.penetrate_minimal_damage.set( 0.f );
+	tab.penetrate_minimal_damage_hp.set( false );
+	tab.knifebot.set( false );
+	tab.zeusbot.set( false );
+
+	// col2.
+	tab.zoom.set( 0 );
+	tab.nospread.set( false );
+	tab.norecoil.set( false );
+	tab.hitchance.set( false );
+	tab.hitchance_amount.set( 0.f );
+	tab.lagfix.set( false );
+	tab.correct.set( false );
+	tab.baim1.clear( );
+	tab.baim2.clear( );
+	tab.baim_hp.set( 0.f );
+	tab.baim_key.set( -1 );
+	tab.double_tap.set( false );
+	tab.double_tap_key.set( -1 );
+}
+
+inline void AimbotTab::SaveState( WeaponCfgState& out ) const {
+	// UI element getters are non-const in this codebase.
+	auto& tab = const_cast< AimbotTab& >( *this );
+
+	out.enable = tab.enable.get( );
+	out.silent = tab.silent.get( );
+	out.selection = tab.selection.get( );
+	out.fov = tab.fov.get( );
+	out.fov_amount = tab.fov_amount.get( );
+	out.hitbox = tab.hitbox.GetActiveIndices( );
+	out.hitbox_history = tab.hitbox_history.GetActiveIndices( );
+	out.multipoint = tab.multipoint.GetActiveIndices( );
+	out.scale = tab.scale.get( );
+	out.body_scale = tab.body_scale.get( );
+	out.minimal_damage = tab.minimal_damage.get( );
+	out.minimal_damage_hp = tab.minimal_damage_hp.get( );
+	out.penetrate = tab.penetrate.get( );
+	out.penetrate_minimal_damage = tab.penetrate_minimal_damage.get( );
+	out.penetrate_minimal_damage_hp = tab.penetrate_minimal_damage_hp.get( );
+	out.knifebot = tab.knifebot.get( );
+	out.zeusbot = tab.zeusbot.get( );
+	out.zoom = tab.zoom.get( );
+	out.nospread = tab.nospread.get( );
+	out.norecoil = tab.norecoil.get( );
+	out.hitchance = tab.hitchance.get( );
+	out.hitchance_amount = tab.hitchance_amount.get( );
+	out.lagfix = tab.lagfix.get( );
+	out.correct = tab.correct.get( );
+	out.baim1 = tab.baim1.GetActiveIndices( );
+	out.baim2 = tab.baim2.GetActiveIndices( );
+	out.baim_hp = tab.baim_hp.get( );
+	out.baim_key = tab.baim_key.get( );
+	out.double_tap = tab.double_tap.get( );
+	out.double_tap_key = tab.double_tap_key.get( );
+	out.initialized = true;
+}
+
+inline void AimbotTab::LoadState( const WeaponCfgState& in ) {
+	// keep weapon_cfg as-is; enable is handled by caller.
+	silent.set( in.silent );
+	selection.set( in.selection );
+	fov.set( in.fov );
+	fov_amount.set( in.fov_amount );
+	hitbox.clear( );
+	for( const auto& idx : in.hitbox )
+		hitbox.select( idx );
+	hitbox_history.clear( );
+	for( const auto& idx : in.hitbox_history )
+		hitbox_history.select( idx );
+	multipoint.clear( );
+	for( const auto& idx : in.multipoint )
+		multipoint.select( idx );
+	scale.set( in.scale );
+	body_scale.set( in.body_scale );
+	minimal_damage.set( in.minimal_damage );
+	minimal_damage_hp.set( in.minimal_damage_hp );
+	penetrate.set( in.penetrate );
+	penetrate_minimal_damage.set( in.penetrate_minimal_damage );
+	penetrate_minimal_damage_hp.set( in.penetrate_minimal_damage_hp );
+	knifebot.set( in.knifebot );
+	zeusbot.set( in.zeusbot );
+
+	zoom.set( in.zoom );
+	nospread.set( in.nospread );
+	norecoil.set( in.norecoil );
+	hitchance.set( in.hitchance );
+	hitchance_amount.set( in.hitchance_amount );
+	lagfix.set( in.lagfix );
+	correct.set( in.correct );
+	baim1.clear( );
+	for( const auto& idx : in.baim1 )
+		baim1.select( idx );
+	baim2.clear( );
+	for( const auto& idx : in.baim2 )
+		baim2.select( idx );
+	baim_hp.set( in.baim_hp );
+	baim_key.set( in.baim_key );
+	double_tap.set( in.double_tap );
+	double_tap_key.set( in.double_tap_key );
+}
+
+// OnWeaponCfgChanged is implemented later in this file once Menu/g_menu are in scope.
+
 class AntiAimTab : public Tab {
 public:
 	// col 1.
@@ -241,12 +414,12 @@ public:
 		yaw_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		RegisterElement(&yaw_stand);
 
-		jitter_range_stand.setup("", XOR("jitter_range_stnd"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"�"));
+		jitter_range_stand.setup("", XOR("jitter_range_stnd"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"°"));
 		jitter_range_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		jitter_range_stand.AddShowCallback(callbacks::IsStandYawJitter);
 		RegisterElement(&jitter_range_stand);
 
-		rot_range_stand.setup("", XOR("rot_range_stnd"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"�"));
+		rot_range_stand.setup("", XOR("rot_range_stnd"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"°"));
 		rot_range_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		rot_range_stand.AddShowCallback(callbacks::IsStandYawRotate);
 		RegisterElement(&rot_range_stand);
@@ -272,7 +445,7 @@ public:
 		dir_time_stand.AddShowCallback(callbacks::IsStandDirAuto);
 		RegisterElement(&dir_time_stand);
 
-		dir_custom_stand.setup("", XOR("dir_custom_stnd"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"�"));
+		dir_custom_stand.setup("", XOR("dir_custom_stnd"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"°"));
 		dir_custom_stand.AddShowCallback(callbacks::IsAntiAimModeStand);
 		dir_custom_stand.AddShowCallback(callbacks::HasStandYaw);
 		dir_custom_stand.AddShowCallback(callbacks::IsStandDirCustom);
@@ -302,12 +475,12 @@ public:
 		yaw_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		RegisterElement(&yaw_walk);
 
-		jitter_range_walk.setup("", XOR("jitter_range_walk"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"�"));
+		jitter_range_walk.setup("", XOR("jitter_range_walk"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"°"));
 		jitter_range_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		jitter_range_walk.AddShowCallback(callbacks::IsWalkYawJitter);
 		RegisterElement(&jitter_range_walk);
 
-		rot_range_walk.setup("", XOR("rot_range_walk"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"�"));
+		rot_range_walk.setup("", XOR("rot_range_walk"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"°"));
 		rot_range_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		rot_range_walk.AddShowCallback(callbacks::IsWalkYawRotate);
 		RegisterElement(&rot_range_walk);
@@ -333,7 +506,7 @@ public:
 		dir_time_walk.AddShowCallback(callbacks::IsWalkDirAuto);
 		RegisterElement(&dir_time_walk);
 
-		dir_custom_walk.setup("", XOR("dir_custom_walk"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"�"));
+		dir_custom_walk.setup("", XOR("dir_custom_walk"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"°"));
 		dir_custom_walk.AddShowCallback(callbacks::IsAntiAimModeWalk);
 		dir_custom_walk.AddShowCallback(callbacks::WalkHasYaw);
 		dir_custom_walk.AddShowCallback(callbacks::IsWalkDirCustom);
@@ -353,12 +526,12 @@ public:
 		yaw_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		RegisterElement(&yaw_air);
 
-		jitter_range_air.setup("", XOR("jitter_range_air"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"�"));
+		jitter_range_air.setup("", XOR("jitter_range_air"), 1.f, 180.f, false, 0, 45.f, 5.f, XOR(L"°"));
 		jitter_range_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		jitter_range_air.AddShowCallback(callbacks::IsAirYawJitter);
 		RegisterElement(&jitter_range_air);
 
-		rot_range_air.setup("", XOR("rot_range_air"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"�"));
+		rot_range_air.setup("", XOR("rot_range_air"), 0.f, 360.f, false, 0, 360.f, 5.f, XOR(L"°"));
 		rot_range_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		rot_range_air.AddShowCallback(callbacks::IsAirYawRotate);
 		RegisterElement(&rot_range_air);
@@ -384,7 +557,7 @@ public:
 		dir_time_air.AddShowCallback(callbacks::IsAirDirAuto);
 		RegisterElement(&dir_time_air);
 
-		dir_custom_air.setup("", XOR("dir_custom_air"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"�"));
+		dir_custom_air.setup("", XOR("dir_custom_air"), -180.f, 180.f, false, 0, 0.f, 5.f, XOR(L"°"));
 		dir_custom_air.AddShowCallback(callbacks::IsAntiAimModeAir);
 		dir_custom_air.AddShowCallback(callbacks::AirHasYaw);
 		dir_custom_air.AddShowCallback(callbacks::IsAirDirCustom);
@@ -404,11 +577,11 @@ public:
 		fake_yaw.setup(XOR("fake yaw"), XOR("fake_yaw"), { XOR("off"), XOR("default"), XOR("relative"), XOR("jitter"), XOR("rotate"), XOR("random"), XOR("local view"), XOR("spinbot"), XOR("reverse lby"), XOR("match lby"), XOR("cumhook yaw"), XOR("fake flick"), XOR("schizophrenic random angle generator"), XOR("chatGPT"), XOR("claude")});
 		RegisterElement(&fake_yaw, 1);
 
-		fake_relative.setup("", XOR("fake_relative"), -90.f, 90.f, false, 0, 0.f, 5.f, XOR(L"�"));
+		fake_relative.setup("", XOR("fake_relative"), -90.f, 90.f, false, 0, 0.f, 5.f, XOR(L"°"));
 		fake_relative.AddShowCallback(callbacks::IsFakeAntiAimRelative);
 		RegisterElement(&fake_relative, 1);
 
-		fake_jitter_range.setup("", XOR("fake_jitter_range"), 1.f, 90.f, false, 0, 0.f, 5.f, XOR(L"�"));
+		fake_jitter_range.setup("", XOR("fake_jitter_range"), 1.f, 90.f, false, 0, 0.f, 5.f, XOR(L"°"));
 		fake_jitter_range.AddShowCallback(callbacks::IsFakeAntiAimJitter);
 		RegisterElement(&fake_jitter_range, 1);
 
@@ -715,7 +888,7 @@ public:
 		fov.setup(XOR("override fov"), XOR("fov"));
 		RegisterElement(&fov, 1);
 
-		fov_amt.setup("", XOR("fov_amt"), 60.f, 140.f, false, 0, 90.f, 1.f, XOR(L"�"));
+		fov_amt.setup("", XOR("fov_amt"), 60.f, 140.f, false, 0, 90.f, 1.f, XOR(L"°"));
 		RegisterElement(&fov_amt, 1);
 
 		fov_scoped.setup(XOR("override fov when scoped"), XOR("fov_scoped"));
@@ -724,7 +897,7 @@ public:
 		viewmodel_fov.setup(XOR("override viewmodel fov"), XOR("viewmodel_fov"));
 		RegisterElement(&viewmodel_fov, 1);
 
-		viewmodel_fov_amt.setup("", XOR("viewmodel_fov_amt"), 60.f, 140.f, false, 0, 90.f, 1.f, XOR(L"�"));
+		viewmodel_fov_amt.setup("", XOR("viewmodel_fov_amt"), 60.f, 140.f, false, 0, 90.f, 1.f, XOR(L"°"));
 		RegisterElement(&viewmodel_fov_amt, 1);
 
 		spectators.setup(XOR("show spectator list"), XOR("spectators"));
@@ -767,7 +940,7 @@ public:
 		thirdperson.SetToggleCallback(callbacks::ToggleThirdPerson);
 		RegisterElement(&thirdperson, 1);
 
-		thirdperson_distance.setup(XOR(" "), XOR("thirdperson_distance"), 50.f, 300.f, false, 0, 150.f, 1.f, XOR(L"�"));
+		thirdperson_distance.setup(XOR(" "), XOR("thirdperson_distance"), 50.f, 300.f, false, 0, 150.f, 1.f, XOR(L"°"));
 		RegisterElement(&thirdperson_distance, 1);
 	}
 };
@@ -1945,6 +2118,8 @@ public:
 	MultiDropdown buy1;
 	MultiDropdown buy2;
 	MultiDropdown buy3;
+    Edit          gemini_api_key;
+    Button        gemini_test;
 	MultiDropdown notifications;
 	Keybind       last_tick_defuse;
 	Keybind       fake_latency;
@@ -1960,6 +2135,7 @@ public:
 	Checkbox clantag;
 	Checkbox killsay;
 	Checkbox quit_on_hurt;
+	Checkbox ai_trash_talker;
 
 public:
 	void init() {
@@ -2021,6 +2197,13 @@ public:
 			}, false);
 		RegisterElement(&buy3);
 
+		gemini_api_key.setup( XOR( "openai api key" ), XOR( "openai_api_key" ), 128 );
+		RegisterElement( &gemini_api_key);
+
+       gemini_test.setup( XOR( "test" ) );
+	   gemini_test.SetCallback( callbacks::OpenAITest );
+		RegisterElement( &gemini_test);
+
 		notifications.setup(XOR("notifications"), XOR("notifications"), { XOR("matchmaking"), XOR("damage"), XOR("purchases"), XOR("bomb"), XOR("defuse") });
 		RegisterElement(&notifications);
 
@@ -2062,6 +2245,9 @@ public:
 
 		quit_on_hurt.setup(XOR("quit on hurt"), XOR("quit_on_hurt"));
 		RegisterElement(&quit_on_hurt, 1);
+
+		ai_trash_talker.setup(XOR("ai trash talker"), XOR("ai_trash_talker"));
+		RegisterElement(&ai_trash_talker, 1);
 	}
 };
 
@@ -2211,3 +2397,28 @@ public:
 };
 
 extern Menu g_menu;
+
+inline void AimbotTab::OnWeaponCfgChanged( ) {
+ auto& tab = g_menu.main.aimbot;
+
+	// preserve global enable across weapon configs.
+	const bool enabled = tab.enable.get( );
+
+	// save current state into the slot we are leaving.
+	if( tab.m_last_weapon_cfg < tab.m_weapon_states.size( ) ) {
+		tab.SaveState( tab.m_weapon_states[ tab.m_last_weapon_cfg ] );
+	}
+
+	// load state for the newly selected weapon cfg.
+	const size_t new_cfg = tab.weapon_cfg.get( );
+	if( new_cfg < tab.m_weapon_states.size( ) && tab.m_weapon_states[ new_cfg ].initialized ) {
+		tab.LoadState( tab.m_weapon_states[ new_cfg ] );
+	}
+	else {
+		AimbotTab::ResetWeaponCfgTab( tab );
+	}
+
+	// re-apply preserved values.
+	tab.enable.set( enabled );
+	tab.m_last_weapon_cfg = new_cfg;
+}

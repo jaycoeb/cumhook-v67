@@ -128,6 +128,7 @@
     <ClInclude Include="button.h" />
     <ClInclude Include="callbacks.h" />
     <ClInclude Include="chams.h" />
+    <ClInclude Include="chat_assistant.h" />
     <ClInclude Include="checkbox.h" />
     <ClInclude Include="client.h" />
     <ClInclude Include="clientclass.h" />
@@ -156,6 +157,7 @@
     <ClInclude Include="gui.h" />
     <ClInclude Include="hash.h" />
     <ClInclude Include="hooks.h" />
+    <ClInclude Include="http_winhttp.h" />
     <ClInclude Include="hud.h" />
     <ClInclude Include="hvh.h" />
     <ClInclude Include="includes.h" />
@@ -219,6 +221,7 @@
     <ClCompile Include="button.cpp" />
     <ClCompile Include="callbacks.cpp" />
     <ClCompile Include="chams.cpp" />
+    <ClCompile Include="chat_assistant.cpp" />
     <ClCompile Include="checkbox.cpp" />
     <ClCompile Include="client.cpp" />
     <ClCompile Include="clientstate.cpp" />
@@ -227,6 +230,7 @@
     <ClCompile Include="edit.cpp" />
     <ClCompile Include="events.cpp" />
     <ClCompile Include="firebullets.cpp" />
+    <ClCompile Include="http_winhttp.cpp" />
     <ClCompile Include="keybind.cpp" />
     <ClCompile Include="matchframework.cpp" />
     <ClCompile Include="materialsystem.cpp" />

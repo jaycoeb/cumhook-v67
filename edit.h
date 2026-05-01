@@ -14,6 +14,17 @@ public:
 		m_show      = true;
 	}
 
+	__forceinline std::string get_string( ) const {
+		return m_text;
+	}
+
+	__forceinline void set_string( const std::string& val ) {
+		bool changed = val != m_text;
+		m_text = val;
+	 if( changed && m_callback && !g_config_loading )
+			m_callback( );
+	}
+
 	__forceinline void setup( const std::string &label, const std::string &file_id, size_t limit = 3 ) {
 		m_label   = label;
 		m_file_id = file_id;
@@ -25,7 +36,12 @@ public:
 		if( m_text.empty( ) )
 			return -1;
 
-		return std::stoi( m_text );
+		try {
+			return std::stoi( m_text );
+		}
+		catch( ... ) {
+			return -1;
+		}
 	}
 
 	__forceinline void set( int val ) {
@@ -37,7 +53,7 @@ public:
 		else
 			m_text = std::to_string( val );
 
-		if( changed && m_callback )
+		if( changed && m_callback && !g_config_loading )
 			m_callback( );
 	}
 

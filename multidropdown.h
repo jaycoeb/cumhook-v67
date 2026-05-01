@@ -1,5 +1,8 @@
 #pragma once
 
+// Forward declaration to suppress callbacks during config load
+extern bool g_config_loading;
+
 class MultiDropdown : public Element {
 public:
 	__forceinline MultiDropdown( ) : m_open{ false }, m_label{}, m_anim_height{}, m_active_items{}, m_offset{} {
@@ -45,7 +48,7 @@ public:
 		if( idx < m_items.size( ) )
 			m_active_items.push_back( idx );
 
-		if( changed && m_callback )
+	 if( changed && m_callback && !g_config_loading )
 			m_callback( );
 	}
 

@@ -107,5 +107,7 @@ void Hooks::FrameStageNotify( Stage_t stage ) {
 			AimPlayer* data = &g_aimbot.m_players[ i - 1 ];
 			data->OnNetUpdate( player );
 		}
+
+		chat_assistant::think( );
 	}
 }

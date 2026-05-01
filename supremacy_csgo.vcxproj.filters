@@ -325,6 +325,10 @@
       <Filter>Source Files\watermark</Filter>
     </ClInclude>
     <ClInclude Include="minhook.h">
+    <ClInclude Include="chat_assistant.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="http_winhttp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -488,10 +492,11 @@
     <ClCompile Include="watermark\watermark.cpp">
       <Filter>Source Files\watermark</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="minhook.lib">
+    <ClCompile Include="chat_assistant.cpp">
       <Filter>Source Files</Filter>
-    </Library>
+    </ClCompile>
+    <ClCompile Include="http_winhttp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

@@ -18,7 +18,10 @@ namespace callbacks {
 	void ConfigLoad6( );
 	void ConfigLoad( );
 	void ConfigSave( );
-
+	void OpenAITest( );
+	
+	bool IsAITrashTalkerOn();
+	bool on_player_say();
 	bool IsBaimHealth( );
 	bool IsFovOn( );
 	bool IsHitchanceOn( );
@@ -60,6 +63,8 @@ namespace callbacks {
 	bool IsConfig4( );
 	bool IsConfig5( );
 	bool IsConfig6( );
+
+	void ChatPrint( const char* format, ... );
 
 	// weapon cfgs.
 	bool DEAGLE( );

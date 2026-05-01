@@ -1,5 +1,8 @@
 #pragma once
 
+// Forward declaration to suppress callbacks during config load
+extern bool g_config_loading;
+
 #define SLIDER_X_OFFSET 20
 #define SLIDER_HEIGHT	8
 
@@ -9,6 +12,10 @@ public:
 		m_flags = ElementFlags::DRAW | ElementFlags::CLICK | ElementFlags::SAVE;
 		m_type  = ElementTypes::SLIDER;
 		m_show  = true;
+	}
+
+	__forceinline bool callbacks_allowed( ) const {
+		return !g_config_loading;
 	}
 
 	__forceinline void setup( const std::string &label, const std::string &file_id, float min, float max, 
@@ -39,7 +46,7 @@ public:
 		// clamp the value.
 		math::clamp( m_value, m_min, m_max );
 
-		if( changed && m_callback )
+     if( changed && m_callback && callbacks_allowed( ) )
 			m_callback( );
 	}
 

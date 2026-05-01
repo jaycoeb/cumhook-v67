@@ -61,6 +61,10 @@ public:
 		m_label{}, m_file_id{}, m_flags{}, m_type{}, m_use_label{},
 		m_show_callbacks{}, m_callback{}, m_show{} {}
 
+	__forceinline size_t GetType( ) const {
+		return m_type;
+	}
+
 	__forceinline void setup( const std::string &label, const std::string &file_id ) {
 		m_label   = label;
 		m_file_id = file_id;

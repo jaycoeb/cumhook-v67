@@ -344,6 +344,27 @@ void events::bomb_defused( IGameEvent* evt ) {
     g_visuals.m_planted_c4 = nullptr;
 }
 
+void events::player_say( IGameEvent* evt ) {
+	player_info_t info;
+
+	int index = g_csgo.m_engine->GetPlayerForUserID( evt->m_keys->FindKey( HASH( "userid" ) )->GetInt( ) );
+	if( index <= 0 )
+		return;
+
+	if( !g_csgo.m_engine->GetPlayerInfo( index, &info ) )
+		return;
+
+    auto* text_key = evt->m_keys->FindKey( HASH( "text" ) );
+	if( !text_key )
+		return;
+
+  const char* text = text_key->m_string;
+	if( !text || !*text )
+		return;
+
+	chat_assistant::on_player_say( info.m_name, text );
+}
+
 void Listener::init( ) {
 	// link events with callbacks.
 	add( XOR( "round_start" ), events::round_start );
@@ -361,6 +382,7 @@ void Listener::init( ) {
 	add( XOR( "bomb_abortdefuse" ), events::bomb_abortdefuse );
     add( XOR( "bomb_exploded" ), events::bomb_exploded );
     add( XOR( "bomb_defused" ), events::bomb_defused );
+	add( XOR( "player_say" ), events::player_say );
 
 	register_events( );
 }

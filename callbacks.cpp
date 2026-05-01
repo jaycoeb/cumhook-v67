@@ -72,31 +72,41 @@ void callbacks::ConfigLoad4( ) {
 }
 
 void callbacks::ConfigLoad5( ) {
-	g_config.load( &g_menu.main, XOR( "5.cum67" ) );
+    g_config.load( &g_menu.main, XOR( "5.cum67" ) );
 	g_menu.main.config.config.select( 5 - 1 );
-	g_notify.add( tfm::format( XOR( "loaded config 5\n" ) ) );
+ g_notify.add_segments( { { "Load", { 203, 10, 220, 255 } }, { "ed co", colors::red }, { "fig 5\n", { 203, 10, 220, 255 } } } );
 }
 
 void callbacks::ConfigLoad6( ) {
-	g_config.load( &g_menu.main, XOR( "6.cum67" ) );
+    g_config.load( &g_menu.main, XOR( "6.cum67" ) );
 	g_menu.main.config.config.select( 6 - 1 );
-	g_notify.add( tfm::format( XOR( "loaded config 6\n" ) ) );
+ g_notify.add_segments( { { "Load", { 203, 10, 220, 255 } }, { "ed co", colors::red }, { "fig 6\n", { 203, 10, 220, 255 } } } );
 }
 
 void callbacks::ConfigLoad( ) {
-	std::string config = g_menu.main.config.config.GetActiveItem( );
+    std::string config = g_menu.main.config.config.GetActiveItem( );
 	std::string file   = tfm::format( XOR( "%s.cum67" ), config.data( ) );
 
 	g_config.load( &g_menu.main, file );
-	g_notify.add( tfm::format( XOR( "loaded config %s\n" ), config.data( ) ) );
+ g_notify.add_segments( { { "Load", { 203, 10, 220, 255 } }, { "ed co", colors::red }, { tfm::format( "fig %s\n", config.data( ) ), { 203, 10, 220, 255 } } } );
 }
 
 void callbacks::ConfigSave( ) {
-	std::string config = g_menu.main.config.config.GetActiveItem( );
+    std::string config = g_menu.main.config.config.GetActiveItem( );
 	std::string file   = tfm::format( XOR( "%s.cum67" ), config.data( ) );
 
 	g_config.save( &g_menu.main, file );
-	g_notify.add( tfm::format( XOR( "saved config %s\n" ), config.data( ) ) );
+  g_notify.add_segments( { { "Sav", { 203, 10, 220, 255 } }, { "ed co", colors::red }, { tfm::format( "fig %s\n", config.data( ) ), { 203, 10, 220, 255 } } } );
+}
+
+void callbacks::OpenAITest( ) {
+    bool ok = chat_assistant::test_connection( );
+	if( ok )
+		g_cl.print( "[BOT] working\n" );
+}
+
+bool callbacks::IsAITrashTalkerOn() {
+	return g_menu.main.misc.ai_trash_talker.get();
 }
 
 bool callbacks::IsBaimHealth( ) {
@@ -559,4 +569,21 @@ bool callbacks::KNIFE_SHADOW_DAGGERS( ) {
 
 bool callbacks::AUTO_STOP( ) {
 	return !g_menu.main.movement.autostop_always_on.get();
+}
+
+void callbacks::ChatPrint( const char* format, ... ) {
+	va_list args;
+	va_start( args, format );
+
+	char buffer[ 256 ];
+	vsnprintf_s( buffer, sizeof( buffer ), _TRUNCATE, format, args );
+
+	va_end( args );
+
+	// Send message to chat
+	if( g_csgo.m_engine->IsInGame( ) ) {
+		// You can print to chat using the message system
+		// This is a placeholder - adjust based on your game's chat system
+		g_notify.add( buffer );
+	}
 }

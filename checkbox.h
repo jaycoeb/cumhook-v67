@@ -1,5 +1,8 @@
 #pragma once
 
+// Forward declaration to suppress callbacks during config load
+extern bool g_config_loading;
+
 #define CHECKBOX_SIZE 8
 
 class Checkbox : public Element {
@@ -11,6 +14,10 @@ public:
 		m_type      = ElementTypes::CHECKBOX;
 		m_use_label = true;
 		m_show      = true;
+	}
+
+	__forceinline bool callbacks_allowed( ) const {
+		return !g_config_loading;
 	}
 
 	__forceinline void setup( const std::string &label, const std::string &file_id, bool use_label = true, bool default = false ) {
@@ -28,7 +35,7 @@ public:
 
 		m_checked = checked;
 
-		if( changed && m_callback )
+     if( changed && m_callback && callbacks_allowed( ) )
 			m_callback( );
 	}
 
