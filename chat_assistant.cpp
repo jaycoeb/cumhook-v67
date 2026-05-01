@@ -46,22 +46,26 @@ bool chat_assistant::test_connection() {
 
     nlohmann::json body{};
 
-    body["contents"] = {
+    body["model"] = "llama-3.1-8b-instant";
+
+    body["messages"] = {
         {
-            {"parts", {
-                {{"text", "ping"}}
-            }}
+            {"role", "user"},
+            {"content", "ping"}
         }
     };
 
-    std::string path =
-        "/v1beta/models/gemini-2.5-flash:generateContent?key=" + api_key;
+    std::string path = "/openai/v1/chat/completions";
+
+    std::wstring headers =
+        L"Authorization: Bearer " + util::MultiByteToWide(api_key) + L"\r\n" +
+        L"Content-Type: application/json\r\n";
 
     auto res = http::post(
-        L"generativelanguage.googleapis.com",
+        L"api.groq.com",
         util::MultiByteToWide(path).c_str(),
         body.dump(),
-        L""   // IMPORTANT: no auth header
+        headers.c_str()
     );
 
     g_cl.print(tfm::format("[BOT] test status: http %u\n", res.status));
@@ -123,7 +127,7 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
         msg.resize(k_max_prompt_len);
 
     std::string full = std::string(name) +
-        " said: \"" + msg + "\". Respond with a short csgo hvh trash talk line.";
+        " said: \"" + msg + "\". Reply with a short, aggressive HVH-style CS:GO trash talk. No emojis. One sentence.";
 
     g_queue.push_back(PendingRequest{
         full,
@@ -147,32 +151,54 @@ void chat_assistant::think() {
     g_last_request_tick = now;
 
     std::string api_key = g_menu.main.misc.gemini_api_key.get_string();
+
+    // trim whitespace/newlines (same as test_connection)
+    api_key.erase(api_key.begin(), std::find_if(api_key.begin(), api_key.end(),
+        [](unsigned char ch) { return !std::isspace(ch); }));
+
+    api_key.erase(std::find_if(api_key.rbegin(), api_key.rend(),
+        [](unsigned char ch) { return !std::isspace(ch); }).base(), api_key.end());
+
+    // DEBUG: show which API key is being used (partially masked)
+    if (!api_key.empty()) {
+        std::string masked = api_key;
+
+        if (masked.size() > 8) {
+            masked = masked.substr(0, 4) + "..." + masked.substr(masked.size() - 4);
+        }
+
+        g_cl.print(tfm::format("[BOT] using api key: %s\n", masked.c_str()));
+    }
+
     if (api_key.empty()) {
-        g_cl.print("[BOT] Gemini API key missing\n");
+        g_cl.print("[BOT] Groq API key missing\n");
         return;
     }
 
     auto req = g_queue.front();
     g_queue.pop_front();
 
-    nlohmann::json body{};
+    std::string path = "/openai/v1/chat/completions";
 
-    body["contents"] = {
+    nlohmann::json body{};
+    body["model"] = "llama-3.1-8b-instant";
+
+    body["messages"] = {
         {
-            {"parts", {
-                {{"text", req.prompt}}
-            }}
+            {"role", "user"},
+            {"content", req.prompt}
         }
     };
 
-    std::string path =
-        "/v1beta/models/gemini-2.5-flash:generateContent?key=" + api_key;
+    std::wstring headers =
+        L"Authorization: Bearer " + util::MultiByteToWide(api_key) + L"\r\n" +
+        L"Content-Type: application/json\r\n";
 
     auto res = http::post(
-        L"generativelanguage.googleapis.com",
+        L"api.groq.com",
         util::MultiByteToWide(path).c_str(),
         body.dump(),
-        L""   // IMPORTANT: no auth header
+        headers.c_str()
     );
 
     if (!res.ok) {
@@ -185,7 +211,7 @@ void chat_assistant::think() {
     try {
         auto json = nlohmann::json::parse(res.body);
         std::string reply =
-            json["candidates"][0]["content"]["parts"][0]["text"];
+            json["choices"][0]["message"]["content"];
 
         g_cl.print(tfm::format("[BOT] %s\n", reply.c_str()));
         std::string safe = reply;
