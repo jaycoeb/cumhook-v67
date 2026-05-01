@@ -88,6 +88,9 @@ using ulong_t = unsigned long;
 #include "events.h"
 #include "shots.h"
 
+// chat assistant.
+#include "chat_assistant.h"
+
 // watermark module.
 #include "watermark/watermark.h"
 
@@ -108,4 +111,7 @@ using ulong_t = unsigned long;
 #include "gui.h"
 #include "callbacks.h"
 #include "menu.h"
+
+// http.
+#include "http_winhttp.h"
 #include "config.h"

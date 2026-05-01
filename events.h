@@ -57,6 +57,7 @@ namespace events {
 	void bomb_abortdefuse( IGameEvent* evt );
     void bomb_defused( IGameEvent* evt );
     void bomb_exploded( IGameEvent* evt );
+   void player_say( IGameEvent* evt );
 }
 
 extern Listener g_listener;

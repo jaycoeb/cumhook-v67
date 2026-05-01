@@ -48,6 +48,21 @@ LRESULT WINAPI Hooks::WndProc( HWND wnd, uint32_t msg, WPARAM wp, LPARAM lp ) {
 		if( ( size_t )wp < g_input.m_keys.size( ) )
 			g_input.SetDown( wp );
 
+		// explicit paste handler (some contexts won't send WM_PASTE).
+		if( wp == 'V' && ( GetKeyState( VK_CONTROL ) & 0x8000 ) ) {
+			if( OpenClipboard( wnd ) ) {
+				HANDLE h = GetClipboardData( CF_TEXT );
+				if( h ) {
+					const char* clip = ( const char* )GlobalLock( h );
+					if( clip ) {
+						g_input.m_buffer += clip;
+						GlobalUnlock( h );
+					}
+				}
+				CloseClipboard( );
+			}
+		}
+
 		break;
 
 	case WM_KEYUP:
@@ -81,12 +96,28 @@ LRESULT WINAPI Hooks::WndProc( HWND wnd, uint32_t msg, WPARAM wp, LPARAM lp ) {
 			break;
 
 		default:
-			if( std::isdigit( static_cast< char >( wp ) ) )
+         // allow general text input.
+			if( wp >= 0x20 && wp < 0x7F )
 				g_input.m_buffer += static_cast< char >( wp );
 
 			break;
 		}
 
+		break;
+
+  case WM_PASTE:
+		// allow paste into active edit controls.
+		if( OpenClipboard( wnd ) ) {
+			HANDLE h = GetClipboardData( CF_TEXT );
+			if( h ) {
+				const char* clip = ( const char* )GlobalLock( h );
+				if( clip ) {
+					g_input.m_buffer += clip;
+					GlobalUnlock( h );
+				}
+			}
+			CloseClipboard( );
+		}
 		break;
 
 	default:

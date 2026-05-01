@@ -87,6 +87,16 @@ void callbacks::ConfigSave( ) {
   g_notify.add_segments( { { "Sav", { 203, 10, 220, 255 } }, { "ed co", colors::red }, { tfm::format( "fig %s\n", config.data( ) ), { 203, 10, 220, 255 } } } );
 }
 
+void callbacks::OpenAITest( ) {
+    bool ok = chat_assistant::test_connection( );
+	if( ok )
+		g_cl.print( "[BOT] working\n" );
+}
+
+bool callbacks::IsAITrashTalkerOn() {
+	return g_menu.main.misc.ai_trash_talker.get();
+}
+
 bool callbacks::IsBaimHealth( ) {
 	return g_menu.main.aimbot.baim2.get( 1 );
 }

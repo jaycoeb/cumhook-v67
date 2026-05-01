@@ -1,5 +1,8 @@
 #pragma once
 
+// Forward declaration to suppress callbacks during config load
+extern bool g_config_loading;
+
 #define DROPDOWN_X_OFFSET		20
 #define DROPDOWN_ITEM_X_OFFSET	10
 #define DROPDOWN_ITEM_Y_OFFSET	5
@@ -13,6 +16,10 @@ public:
 		m_flags = ElementFlags::DRAW | ElementFlags::CLICK | ElementFlags::ACTIVE | ElementFlags::SAVE | ElementFlags::DEACIVATE;
 		m_type  = ElementTypes::DROPDOWN;
 		m_show  = true;
+	}
+
+	__forceinline bool callbacks_allowed( ) const {
+		return !g_config_loading;
 	}
 
 	__forceinline void setup( const std::string &label, const std::string &file_id, const std::vector< std::string > &items, bool use_label = true, size_t active = 0 ) {
@@ -46,7 +53,7 @@ public:
 
 		m_active_item = idx;
 
-		if( changed && m_callback )
+     if( changed && m_callback && callbacks_allowed( ) )
 			m_callback( );
 	}
 

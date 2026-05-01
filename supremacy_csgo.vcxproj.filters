@@ -321,8 +321,14 @@
     <ClInclude Include="watermark\watermark.h">
       <Filter>Header Files\menu</Filter>
     </ClInclude>
-<ClInclude Include="watermark.h">
+    <ClInclude Include="watermark.h">
       <Filter>Source Files\watermark</Filter>
+    </ClInclude>
+    <ClInclude Include="chat_assistant.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="http_winhttp.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -485,7 +491,11 @@
     <ClCompile Include="watermark\watermark.cpp">
       <Filter>Source Files\watermark</Filter>
     </ClCompile>
-</ItemGroup>
+    <ClCompile Include="chat_assistant.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="http_winhttp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
 </Project>
-
-

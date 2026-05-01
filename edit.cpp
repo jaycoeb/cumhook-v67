@@ -11,16 +11,16 @@ void Edit::draw( ) {
 	// box outline.
 	render::rect( p.x + EDIT_X_OFFSET, p.y + 15, m_w - EDIT_X_OFFSET, EDIT_BOX_HEIGHT, { 0, 0, 0, m_parent->m_alpha } );
 
-	// inner blob
+   // inner blob
 	// todo; gradient?
-	render::rect_filled( p.x + EDIT_X_OFFSET + 1, p.y + 15 + 1, m_w - EDIT_X_OFFSET - 2, EDIT_BOX_HEIGHT - 2, { 255, 255, 255, m_parent->m_alpha } );
+	render::rect_filled( p.x + EDIT_X_OFFSET + 1, p.y + 15 + 1, m_w - EDIT_X_OFFSET - 2, EDIT_BOX_HEIGHT - 2, { 95, 174, 227, m_parent->m_alpha } );
 
-	render::menu.string( p.x + EDIT_X_OFFSET + EDIT_ITEM_X_OFFSET, p.y + 15 + 4, { 255, 255, 255, m_parent->m_alpha }, m_text );
+	render::menu.string( p.x + EDIT_X_OFFSET + EDIT_ITEM_X_OFFSET, p.y + 15 + 4, { 0, 0, 0, m_parent->m_alpha }, m_text );
 
 	render::FontSize_t size = render::menu.size( m_text );
 
-	if( m_typing && ( g_winapi.GetTickCount( ) / 500 ) % 2 )
-		render::rect_filled( p.x + EDIT_X_OFFSET + EDIT_ITEM_X_OFFSET + size.m_width + 1, p.y + 15 + 13, 6, 2, { 255, 255, 255, m_parent->m_alpha } );
+    if( m_typing && ( g_winapi.GetTickCount( ) / 500 ) % 2 )
+		render::rect_filled( p.x + EDIT_X_OFFSET + EDIT_ITEM_X_OFFSET + size.m_width + 1, p.y + 15 + 13, 6, 2, { 0, 0, 0, m_parent->m_alpha } );
 }
 
 void Edit::think( ) {

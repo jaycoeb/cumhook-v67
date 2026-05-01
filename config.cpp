@@ -1,23 +1,27 @@
 #include "includes.h"
 
+bool g_config_loading = false;
+
 Config g_config{};
 
 void Config::init( ) {
 	// reset.
 	m_init = false;
 
-	// alloc.
-	m_path.resize( MAX_PATH + 1 );
+	char path[ MAX_PATH ];
 
 	// get the path to mydocuments.
-	if( !SUCCEEDED( g_winapi.SHGetFolderPathA( 0, CSIDL_PERSONAL, 0, SHGFP_TYPE_CURRENT, ( char* )m_path.data( ) ) ) )
+	if( !SUCCEEDED( g_winapi.SHGetFolderPathA( 0, CSIDL_PERSONAL, 0, SHGFP_TYPE_CURRENT, path ) ) )
 		return;
 
 	// append our subdir.
-	g_winapi.PathAppendA( ( char* )m_path.c_str( ), g_cl.m_user.c_str( ) );
+	g_winapi.PathAppendA( path, g_cl.m_user.c_str( ) );
 
 	// create folder if not present.
-	g_winapi.CreateDirectoryA( m_path.c_str( ), 0 );
+	g_winapi.CreateDirectoryA( path, 0 );
+
+	// save path.
+	m_path = path;
 
 	// we found the path.
 	// and we managed to create our subdir.
@@ -29,10 +33,12 @@ void Config::LoadHotkeys( ) {
 		return;
 
 	// make copy of parent dir.
-	std::string file{ m_path };
+	char file[ MAX_PATH ];
+	std::memcpy( file, m_path.data( ), std::min( m_path.size( ), ( size_t )MAX_PATH ) );
+	file[ std::min( m_path.size( ), ( size_t )MAX_PATH - 1 ) ] = '\0';
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.cum67" ) );
+	g_winapi.PathAppendA( file, XOR( "keys.cum67" ) );
 
 	// construct incoming file stream.
 	std::ifstream in{ file };
@@ -49,8 +55,15 @@ void Config::LoadHotkeys( ) {
 	in.read( &data[ 0 ], data.size( ) );
 	in.close( );
 
-	// decrypt config and convert to json obj.
-	nlohmann::json config{ nlohmann::json::parse( crypto::base64_decode( data ) ) };
+  // decrypt config and convert to json obj.
+	nlohmann::json config;
+	try {
+		config = nlohmann::json::parse( crypto::base64_decode( data ) );
+		}
+		catch( ... ) {
+		 g_config_loading = false;
+			return;
+	}
 
 	// load all keys from the json.
 	g_menu.main.config.key1.set( config[ g_menu.main.config.key1.m_file_id ] );
@@ -68,10 +81,12 @@ void Config::SaveHotkeys( ) {
 	nlohmann::json config{};
 
 	// make copy of parent dir.
-	std::string file{ m_path };
+	char file[ MAX_PATH ];
+	std::memcpy( file, m_path.data( ), std::min( m_path.size( ), ( size_t )MAX_PATH ) );
+	file[ std::min( m_path.size( ), ( size_t )MAX_PATH - 1 ) ] = '\0';
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), XOR( "keys.cum67" ) );
+	g_winapi.PathAppendA( file, XOR( "keys.cum67" ) );
 
 	// construct outgoing file stream.
 	std::ofstream stream{ file };
@@ -89,7 +104,13 @@ void Config::SaveHotkeys( ) {
 	config[ g_menu.main.config.key6.m_file_id ] = g_menu.main.config.key6.get( );
 
 	// write to file.
-	stream << crypto::base64_encode( config.dump( ) );
+  try {
+		stream << crypto::base64_encode( config.dump( ) );
+	}
+	catch( ... ) {
+		stream.close( );
+		return;
+	}
 	stream.close( );
 }
 
@@ -97,15 +118,24 @@ void Config::load( const Form* form, const std::string& name ) {
 	if( !m_init )
 		return;
 
+	// RAII guard to ensure g_config_loading is always reset
+	struct LoadGuard {
+		~LoadGuard() { g_config_loading = false; }
+	} guard;
+
+	g_config_loading = true;
+
 	// nothing to load.
 	if( form->m_tabs.empty( ) )
 		return;
 
 	// make copy of parent dir.
-	std::string file{ m_path };
+	char file[ MAX_PATH ];
+	std::memcpy( file, m_path.data( ), std::min( m_path.size( ), ( size_t )MAX_PATH ) );
+	file[ std::min( m_path.size( ), ( size_t )MAX_PATH - 1 ) ] = '\0';
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), name.c_str( ) );
+	g_winapi.PathAppendA( file, name.c_str( ) );
 
 	// construct incoming file stream.
 	std::ifstream in{ file };
@@ -117,13 +147,27 @@ void Config::load( const Form* form, const std::string& name ) {
 	// read file.
 	std::string data;
 	in.seekg( 0, std::ios::end );
-	data.resize( in.tellg( ) );
+
+	size_t size = in.tellg( );
+	if( size == -1 ) {
+		in.close( );
+		return;
+	}
+
+	data.resize( size );
 	in.seekg( 0, std::ios::beg );
 	in.read( &data[ 0 ], data.size( ) );
 	in.close( );
 
 	// decrypt config and convert to json obj.
-	nlohmann::json config{ nlohmann::json::parse( crypto::base64_decode( data ) ) };
+	nlohmann::json config;
+
+	try {
+		config = nlohmann::json::parse( crypto::base64_decode( data ) );
+	}
+	catch( ... ) {
+		return;
+	}
 			
 	// iterate all stored tabs.
 	for( nlohmann::json::iterator t = config.begin( ); t != config.end( ); t++ ) {
@@ -140,74 +184,86 @@ void Config::load( const Form* form, const std::string& name ) {
 			continue;
 
 		// iterate all stored elements.
-		for( nlohmann::json::iterator e = elements.begin( ); e != elements.end( ); e++ ) {
-			// get element identifier.
-			std::string id = e.key( );
+		try {
+			for( nlohmann::json::iterator e = elements.begin( ); e != elements.end( ); e++ ) {
+				// get element identifier.
+				std::string id = e.key( );
 
-			// get element by name.
-			// ignore if element is not present.
-			Element* element = tab->GetElementByName( id );
-			if( !element )
-				continue;
-
-			switch( element->m_type ) {
-
-			case ElementTypes::CHECKBOX:
-				static_cast< Checkbox* >( element )->set( e.value( ) );
-				break;
-
-			case ElementTypes::SLIDER:
-				static_cast< Slider* >( element )->set( e.value( ) );
-				break;
-
-			case ElementTypes::KEYBIND:
-				static_cast< Keybind* >( element )->set( e.value( ) );
-				break;
-
-			case ElementTypes::DROPDOWN:
-				static_cast< Dropdown* >( element )->set( e.value( ) );
-				break;
-
-			case ElementTypes::COLORPICKER:
-			{
-				if( !e.value( ).is_array( ) )
+				// get element by name.
+				// ignore if element is not present.
+				Element* element = tab->GetElementByName( id );
+				if( !element )
 					continue;
 
-				std::vector< int > color = e.value( );
+				switch( element->m_type ) {
 
-				// tf happened here. colors should be sets of 4.
-				if( color.size( ) != 4 )
-					continue;
-			
-				// set color.
-				static_cast< Colorpicker* >( element )->set( { color[ 0 ], color[ 1 ], color[ 2 ], color[ 3 ] } );
+				case ElementTypes::CHECKBOX:
+					static_cast< Checkbox* >( element )->set( e.value( ) );
+					break;
+
+				case ElementTypes::SLIDER:
+					static_cast< Slider* >( element )->set( e.value( ) );
+					break;
+
+				case ElementTypes::KEYBIND:
+					static_cast< Keybind* >( element )->set( e.value( ) );
+					break;
+
+				case ElementTypes::DROPDOWN:
+					static_cast< Dropdown* >( element )->set( e.value( ) );
+					break;
+
+				case ElementTypes::COLORPICKER:
+				{
+					if( !e.value( ).is_array( ) )
+						continue;
+
+					std::vector< int > color = e.value( );
+
+					// tf happened here. colors should be sets of 4.
+					if( color.size( ) != 4 )
+						continue;
+
+					// set color.
+					static_cast< Colorpicker* >( element )->set( { color[ 0 ], color[ 1 ], color[ 2 ], color[ 3 ] } );
+					break;
+				}
+
+				case ElementTypes::MULTI_DROPDOWN:
+				{
+					if( !e.value( ).is_array( ) )
+						continue;
+
+					MultiDropdown* mdd = ( MultiDropdown* )element;
+
+					std::vector< int > selection = e.value( );
+
+					mdd->clear( );
+
+					for( auto idx : selection )
+						mdd->select( idx );
+
+					break;
+				}
+
+				case ElementTypes::EDIT:
+				{
+					Edit* ed = static_cast< Edit* >( element );
+					if( e.value( ).is_number_integer( ) )
+						ed->set( e.value( ) );
+					else if( e.value( ).is_string( ) )
+						ed->set_string( e.value( ).get< std::string >( ) );
+					break;
+				}
 				break;
+
+				default:
+					break;
+				}
 			}
-
-			case ElementTypes::MULTI_DROPDOWN:
-			{
-				if( !e.value( ).is_array( ) )
-					continue;
-
-				MultiDropdown* mdd = ( MultiDropdown* )element;
-
-				std::vector< int > selection = e.value( );
-
-				mdd->clear( );
-
-				for( auto idx : selection )
-					mdd->select( idx );
-		
-				break;
-			}
-				
-			case ElementTypes::EDIT:
-				static_cast< Edit* >( element )->set( e.value( ) );
-				break;
-
-			default:
-				break;
-			}
+		}
+		catch( ... ) {
+			continue;
 		}
 	}
 
@@ -269,7 +325,7 @@ void Config::load( const Form* form, const std::string& name ) {
 			}
 		}
 	}
-	catch( ... ) {
+  catch( ... ) {
 	}
 }
 
@@ -284,10 +340,12 @@ void Config::save( const Form* form, const std::string& name ) {
 		return;
 
 	// make copy of parent dir.
-	std::string file{ m_path };
+	char file[ MAX_PATH ];
+	std::memcpy( file, m_path.data( ), std::min( m_path.size( ), ( size_t )MAX_PATH ) );
+	file[ std::min( m_path.size( ), ( size_t )MAX_PATH - 1 ) ] = '\0';
 
 	// append filename.
-	g_winapi.PathAppendA( ( char* )file.c_str( ), name.c_str( ) );
+	g_winapi.PathAppendA( file, name.c_str( ) );
 
 	// construct outgoing file stream.
 	std::ofstream stream{ file };
@@ -297,71 +355,84 @@ void Config::save( const Form* form, const std::string& name ) {
 	}
 		
 	// iterate tabs.
-	for( const auto t : form->m_tabs ) {
-		// this tab has no elements.
-		if( t->m_elements.empty( ) )
-			continue;
-
-		// get tab title.
-		std::string title = t->m_title;
-
-		// iterate tab elements.
-		for( const auto e : t->m_elements ) {
-			if( !( e->m_flags & ElementFlags::SAVE ) )
+	try {
+		for( const auto t : form->m_tabs ) {
+			// this tab has no elements.
+			if( t->m_elements.empty( ) )
 				continue;
 
-			// get element type.
-			size_t type = e->m_type;
+			// get tab title.
+			std::string title = t->m_title;
 
-			// get file identifier.
-			std::string name = e->m_file_id;
+			// iterate tab elements.
+			for( const auto e : t->m_elements ) {
+				if( !( e->m_flags & ElementFlags::SAVE ) )
+					continue;
 
-			// NOTE; gross C++ casts ahead.
-			// pls dont kill me its the best way.
+				// get element type.
+				size_t type = e->m_type;
 
-			switch( type ) {
+				// get file identifier.
+				std::string name = e->m_file_id;
 
-			case ElementTypes::CHECKBOX:
-				config[ title ][ name ] = static_cast< Checkbox* >( e )->get( );
+				// NOTE; gross C++ casts ahead.
+				// pls dont kill me its the best way.
+
+				switch( type ) {
+
+				case ElementTypes::CHECKBOX:
+					config[ title ][ name ] = static_cast< Checkbox* >( e )->get( );
+					break;
+
+				case ElementTypes::SLIDER:
+					config[ title ][ name ] = static_cast< Slider* >( e )->get( );
+					break;
+
+				case ElementTypes::KEYBIND:
+					config[ title ][ name ] = static_cast< Keybind* >( e )->get( );
+					break;
+
+				case ElementTypes::DROPDOWN:
+					config[ title ][ name ] = static_cast< Dropdown* >( e )->get( );
+					break;
+
+				case ElementTypes::COLORPICKER:
+				{
+					// get color
+					Color color = static_cast< Colorpicker* >( e )->get( );
+
+					// construct small array with color.
+					std::array< int, 4 > arr = { color.r( ), color.g( ), color.b( ), color.a( ) };
+
+					// write array to config.
+					config[ title ][ name ] = arr;
+					break;
+				}
+
+				case ElementTypes::MULTI_DROPDOWN:
+					config[ title ][ name ] = static_cast< MultiDropdown* >( e )->GetActiveIndices( );
+					break;
+
+				case ElementTypes::EDIT:
+				{
+					Edit* ed = static_cast< Edit* >( e );
+					// store as string if it can't be represented as int.
+					int val = ed->get( );
+					if( val != -1 )
+						config[ title ][ name ] = val;
+					else
+						config[ title ][ name ] = ed->get_string( );
+					break;
+				}
 				break;
 
-			case ElementTypes::SLIDER:
-				config[ title ][ name ] = static_cast< Slider* >( e )->get( );
-				break;
-
-			case ElementTypes::KEYBIND:
-				config[ title ][ name ] = static_cast< Keybind* >( e )->get( );
-				break;
-
-			case ElementTypes::DROPDOWN:
-				config[ title ][ name ] = static_cast< Dropdown* >( e )->get( );
-				break;
-
-			case ElementTypes::COLORPICKER:
-			{
-				// get color
-				Color color = static_cast< Colorpicker* >( e )->get( );
-
-				// construct small array with color.
-				std::array< int, 4 > arr = { color.r( ), color.g( ), color.b( ), color.a( ) };
-
-				// write array to config.
-				config[ title ][ name ] = arr;
-				break;
-			}
-
-			case ElementTypes::MULTI_DROPDOWN:
-				config[ title ][ name ] = static_cast< MultiDropdown* >( e )->GetActiveIndices( );
-				break;
-
-			case ElementTypes::EDIT:
-				config[ title ][ name ] = static_cast< Edit* >( e )->get( );
-				break;
-
-			default:
-				break;
+				default:
+					break;
+				}
 			}
 		}
+	}
+	catch( ... ) {
 	}
 
 	// store weapon config states for aimbot tab.
@@ -373,7 +444,11 @@ void Config::save( const Form* form, const std::string& name ) {
 				tab = ( AimbotTab* )t;
 		}
 
-		if( tab ) {
+     if( tab ) {
+			// ensure current UI state is saved into the active weapon slot before writing to disk.
+			if( tab->m_last_weapon_cfg < tab->m_weapon_states.size( ) )
+				tab->SaveState( tab->m_weapon_states[ tab->m_last_weapon_cfg ] );
+
           nlohmann::json arr = nlohmann::json::array( );
 
 			for( const auto& st : tab->m_weapon_states ) {

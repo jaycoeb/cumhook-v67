@@ -15,7 +15,10 @@ namespace callbacks {
 	void ConfigLoad6( );
 	void ConfigLoad( );
 	void ConfigSave( );
-
+	void OpenAITest( );
+	
+	bool IsAITrashTalkerOn();
+	bool on_player_say();
 	bool IsBaimHealth( );
 	bool IsFovOn( );
 	bool IsHitchanceOn( );
