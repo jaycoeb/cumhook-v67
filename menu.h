@@ -251,7 +251,6 @@ inline void AimbotTab::ResetWeaponCfgTab( AimbotTab& tab ) {
 	tab.baim2.clear( );
 	tab.baim_hp.set( 0.f );
 	tab.baim_key.set( -1 );
-	tab.double_tap.set( false );
 	tab.double_tap_key.set( -1 );
 }
 
@@ -287,7 +286,6 @@ inline void AimbotTab::SaveState( WeaponCfgState& out ) const {
 	out.baim2 = tab.baim2.GetActiveIndices( );
 	out.baim_hp = tab.baim_hp.get( );
 	out.baim_key = tab.baim_key.get( );
-	out.double_tap = tab.double_tap.get( );
 	out.double_tap_key = tab.double_tap_key.get( );
 	out.initialized = true;
 }
@@ -332,7 +330,6 @@ inline void AimbotTab::LoadState( const WeaponCfgState& in ) {
 		baim2.select( idx );
 	baim_hp.set( in.baim_hp );
 	baim_key.set( in.baim_key );
-	double_tap.set( in.double_tap );
 	double_tap_key.set( in.double_tap_key );
 }
 
