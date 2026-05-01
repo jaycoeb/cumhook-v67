@@ -3,7 +3,7 @@
 namespace {
     struct PendingRequest {
         std::string prompt;
-        uint32_t    tick;
+        uint32_t    execute_time;
     };
 
     std::deque< PendingRequest > g_queue{};
@@ -126,12 +126,24 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     if (msg.size() > k_max_prompt_len)
         msg.resize(k_max_prompt_len);
 
-    std::string full = std::string(name) +
-        " said: \"" + msg + "\". Reply with a short, aggressive HVH-style CS:GO trash talk. No emojis. One sentence.";
+    std::string custom = g_menu.main.misc.ai_trash_prompt.get_string();
+
+    if (custom.find("{name}") != std::string::npos)
+        custom.replace(custom.find("{name}"), 6, name);
+
+    if (custom.find("{msg}") != std::string::npos)
+        custom.replace(custom.find("{msg}"), 5, msg);
+
+    std::string full = custom;
+
+    uint32_t now = g_winapi.GetTickCount();
+
+    // 1–2 second random delay
+    uint32_t delay = 1000 + (rand() % 1000);
 
     g_queue.push_back(PendingRequest{
         full,
-        (uint32_t)g_winapi.GetTickCount()
+        now + delay
         });
 
     g_cl.print(tfm::format("[BOT] queued: %s\n", full.c_str()));
@@ -145,44 +157,35 @@ void chat_assistant::think() {
         return;
 
     uint32_t now = g_winapi.GetTickCount();
+
+    auto& req = g_queue.front();
+
+    // not ready yet → wait
+    if (now < req.execute_time)
+        return;
+
+    // rate limit (optional safety)
     if (now - g_last_request_tick < k_rate_limit_ms)
         return;
 
     g_last_request_tick = now;
+    g_queue.pop_front();
 
     std::string api_key = g_menu.main.misc.gemini_api_key.get_string();
 
-    // trim whitespace/newlines (same as test_connection)
     api_key.erase(api_key.begin(), std::find_if(api_key.begin(), api_key.end(),
         [](unsigned char ch) { return !std::isspace(ch); }));
 
     api_key.erase(std::find_if(api_key.rbegin(), api_key.rend(),
         [](unsigned char ch) { return !std::isspace(ch); }).base(), api_key.end());
 
-    // DEBUG: show which API key is being used (partially masked)
-    if (!api_key.empty()) {
-        std::string masked = api_key;
-
-        if (masked.size() > 8) {
-            masked = masked.substr(0, 4) + "..." + masked.substr(masked.size() - 4);
-        }
-
-        g_cl.print(tfm::format("[BOT] using api key: %s\n", masked.c_str()));
-    }
-
     if (api_key.empty()) {
         g_cl.print("[BOT] Groq API key missing\n");
         return;
     }
 
-    auto req = g_queue.front();
-    g_queue.pop_front();
-
-    std::string path = "/openai/v1/chat/completions";
-
     nlohmann::json body{};
     body["model"] = "llama-3.1-8b-instant";
-
     body["messages"] = {
         {
             {"role", "user"},
@@ -196,15 +199,13 @@ void chat_assistant::think() {
 
     auto res = http::post(
         L"api.groq.com",
-        util::MultiByteToWide(path).c_str(),
+        util::MultiByteToWide("/openai/v1/chat/completions").c_str(),
         body.dump(),
         headers.c_str()
     );
 
     if (!res.ok) {
         g_cl.print(tfm::format("[BOT] request failed: %s\n", res.error.c_str()));
-        if (!res.body.empty())
-            g_cl.print(tfm::format("[BOT] body: %s\n", res.body.c_str()));
         return;
     }
 
@@ -213,17 +214,14 @@ void chat_assistant::think() {
         std::string reply =
             json["choices"][0]["message"]["content"];
 
-        g_cl.print(tfm::format("[BOT] %s\n", reply.c_str()));
         std::string safe = reply;
-
         safe.erase(std::remove(safe.begin(), safe.end(), '\n'), safe.end());
         safe.erase(std::remove(safe.begin(), safe.end(), '"'), safe.end());
 
         if (safe.size() > 120)
             safe.resize(120);
 
-        std::string cmd = "say " + safe;
-        g_csgo.m_engine->ExecuteClientCmd(cmd.c_str());
+        g_csgo.m_engine->ExecuteClientCmd(("say " + safe).c_str());
     }
     catch (...) {
         g_cl.print("[BOT] parse error\n");
