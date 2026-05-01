@@ -118,6 +118,7 @@ void Force_proxy( CRecvProxyData *data, Address ptr, Address out ) {
 }
 
 void Hooks::init( ) {
+
 	// hook wndproc.
 	auto m_hWindow = FindWindowA(XOR("Valve001"), NULL); 
 	m_old_wndproc = (WNDPROC)g_winapi.SetWindowLongA(m_hWindow, GWL_WNDPROC, util::force_cast<LONG>(Hooks::WndProc));

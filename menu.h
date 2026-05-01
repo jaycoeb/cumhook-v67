@@ -63,7 +63,10 @@ public:
 	Checkbox	  minimal_damage_hp;
 	Checkbox	  penetrate;
 	Slider		  penetrate_minimal_damage;
+	Keybind		  minimum_damage_override_key;
 	Checkbox	  penetrate_minimal_damage_hp;
+	Checkbox	  minimum_damage_override;
+	Slider		  minimum_damage_override_hp;
 	Checkbox      knifebot;
 	Checkbox	  zeusbot;
 
@@ -75,12 +78,13 @@ public:
 	Slider	      hitchance_amount;
 	Checkbox      lagfix;
 	Checkbox	  correct;
+	Checkbox	  random_resolver;
 	MultiDropdown baim1;
 	MultiDropdown baim2;
 	Slider        baim_hp;
 	Keybind       baim_key;
-	Checkbox	  double_tap;
 	Keybind       double_tap_key;
+	Checkbox      speedy_double_tap;
 
 public:
 	void init() {
@@ -144,6 +148,18 @@ public:
 		penetrate_minimal_damage_hp.AddShowCallback(callbacks::IsPenetrationOn);
 		RegisterElement(&penetrate_minimal_damage_hp);
 
+		minimum_damage_override.setup(XOR("minimum damage override"), XOR("minimum_damage_override"));
+		RegisterElement(&minimum_damage_override);
+
+		minimum_damage_override_key.setup(XOR("min damage override (toggle)"), XOR("minimum_damage_override_key"));
+		minimum_damage_override_key.AddShowCallback(callbacks::IsMinimumDamageOverrideOn);
+		minimum_damage_override_key.SetToggleCallback(callbacks::ToggleMinDamageOverride);
+		RegisterElement(&minimum_damage_override_key);
+
+		minimum_damage_override_hp.setup("", XOR("minimum_damage_override_hp"), 1.f, 100.f, false, 0, 10.f, 1.f);
+		minimum_damage_override_hp.AddShowCallback(callbacks::IsMinimumDamageOverrideOn);
+		RegisterElement(&minimum_damage_override_hp);
+
 		knifebot.setup(XOR("aimbot with knife"), XOR("knifebot"));
 		RegisterElement(&knifebot);
 
@@ -173,8 +189,12 @@ public:
 		lagfix.setup(XOR("predict fake-lag"), XOR("lagfix"));
 		RegisterElement(&lagfix, 1);
 
-		correct.setup(XOR("correct anti-aim"), XOR("correct"));
+		correct.setup(XOR("resolver"), XOR("correct"));
 		RegisterElement(&correct, 1);
+
+		random_resolver.setup(XOR("random resolver"), XOR("random_resolver"));
+		random_resolver.AddShowCallback(callbacks::IsResolverOn);
+		RegisterElement(&random_resolver, 1);
 
 		baim1.setup(XOR("prefer body aim"), XOR("baim1"), { XOR("always"), XOR("lethal"), XOR("lethal x2"), XOR("fake"), XOR("in air") });
 		RegisterElement(&baim1, 1);
@@ -189,11 +209,12 @@ public:
 		baim_key.setup(XOR("body aim on key"), XOR("body aim on key"));
 		RegisterElement(&baim_key, 1);
 
-		double_tap.setup(XOR("double tap"), XOR("double_tap"));
-		RegisterElement(&double_tap, 1);
-
 		double_tap_key.setup(XOR("double tap key"), XOR("double_tap_key"));
+		double_tap_key.SetToggleCallback(callbacks::ToggleDoubleTap);
 		RegisterElement(&double_tap_key, 1);
+
+		speedy_double_tap.setup("speedy double tap (glitchy)", XOR("speedy_double_tap"));
+		RegisterElement(&speedy_double_tap, 1);
 	}
 };
 
@@ -897,7 +918,7 @@ public:
 		pen_crosshair.setup(XOR("penetration crosshair"), XOR("pen_xhair"));
 		RegisterElement(&pen_crosshair, 1);
 
-		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency") });
+		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("min damage override")});
 		RegisterElement(&indicators, 1);
 
 		tracers.setup(XOR("grenade simulation"), XOR("tracers"));

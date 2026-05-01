@@ -334,14 +334,15 @@ void Client::OnTick(CUserCmd *cmd) {
   // run all movement related code.
   DoMove();
 
-  // 🔥 RESTORE IMMEDIATELY AFTER PREDICTION
-  g_inputpred.restore();
-
   // store stuff / animations
   EndMove(cmd);
 
   // restore the players.
   BackupPlayers(true);
+
+  // restore curtime/frametime
+    // and prediction seed/player.
+  g_inputpred.restore();
 }
 
 void Client::SetAngles() {

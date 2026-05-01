@@ -4,8 +4,11 @@ namespace callbacks {
 	void SkinUpdate( );
 	void ForceFullUpdate( );
 	void ToggleThirdPerson( );
+	void ToggleMinDamageOverride( );
 	void ToggleFakeLatency( );
     void ToggleKillfeed( );
+	void ToggleDoubleTap( );
+	bool IsDoubleTapOn( );
 	void SaveHotkeys( );
 	void ConfigLoad1( );
 	void ConfigLoad2( );
@@ -23,8 +26,10 @@ namespace callbacks {
 	bool IsFovOn( );
 	bool IsHitchanceOn( );
 	bool IsPenetrationOn( );
+	bool IsMinimumDamageOverrideOn( );
 	bool IsMultipointOn( );
 	bool IsMultipointBodyOn( );
+	bool IsResolverOn( );
 
 	bool IsAntiAimModeStand( );
 	bool HasStandYaw( );

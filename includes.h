@@ -111,6 +111,16 @@ using ulong_t = unsigned long;
 #include "gui.h"
 #include "callbacks.h"
 #include "menu.h"
+#include "config.h"
+
+#define VMPBSTART(tag)
+#define VMPLSTART(tag)
+#define VMPEND()
+#define VMProtectIsDebuggerPresent(x) false
+#define VMProtectGetCurrentHWID(x, z) 0
+#define VMProtectBeginUltra(x)
+#define VMProtectEnd(x)
+#define VMProtectBeginMutation(x)
 
 // http.
 #include "http_winhttp.h"

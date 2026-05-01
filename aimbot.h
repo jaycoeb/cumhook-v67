@@ -153,6 +153,9 @@ public:
 	float m_best_lag;
 	float m_best_height;
 	
+	//
+	bool m_min_dmg_override;
+
 	// found target stuff.
 	Player*    m_target;
 	ang_t      m_angle;
@@ -210,6 +213,21 @@ public:
 	bool CanKnife( LagRecord* record, ang_t angle, bool& stab );
 	bool KnifeTrace( vec3_t dir, bool stab, CGameTrace* trace );
 	bool KnifeIsBehind( LagRecord* record );
+
+	//doubletap stuff
+
+	bool m_double_tap;
+
+	bool m_shifting;
+	bool m_charged;
+	int m_shift_cmd;
+	int m_shift_tickbase;
+	int m_charged_ticks;
+	int m_charge_timer;
+	int m_tick_to_shift;
+	int m_tick_to_shift_alternate;
+	int m_tick_to_recharge;
+	bool m_shifted;
 };
 
 extern Aimbot g_aimbot;
