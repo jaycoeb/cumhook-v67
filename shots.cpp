@@ -264,8 +264,18 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	if ( attacker < 1 || attacker > 64 || victim < 1 || victim > 64 )
 		return;
 
+	//quit on hurt
+	if (g_menu.main.misc.quit_on_hurt.get())
+	{
+		if (victim == g_csgo.m_engine->GetLocalPlayer())
+		{
+			g_csgo.m_engine->ExecuteClientCmd(XOR("quit"));
+			return;
+		}
+	}
+
 	// we were not the attacker or we hurt ourselves.
-	else if ( attacker != g_csgo.m_engine->GetLocalPlayer( ) || victim == g_csgo.m_engine->GetLocalPlayer( ) )
+	else if ( attacker != g_csgo.m_engine->GetLocalPlayer( ))
 		return;
 
 	// get hitgroup.
