@@ -491,12 +491,15 @@ void Aimbot::think() {
 		return;
 	}
 
-	// we have a normal weapon or a non cocking revolver
-	// choke if its the processing tick.
+	// Always flush a pending double tap before anything else.
+	FlushDoubleTap();
+
 	if (g_cl.m_weapon_fire && !g_cl.m_lag && !revolver) {
-		*g_cl.m_packet = false;
-		StripAttack();
-		return;
+		if (!callbacks::IsDoubleTapOn() || !m_dt.armed) {
+			*g_cl.m_packet = false;
+			StripAttack();
+			return;
+		}
 	}
 
 	// no point in aimbotting if we cannot fire this tick.
@@ -954,9 +957,6 @@ bool AimPlayer::GetBestAimPosition(vec3_t& aim, float& damage, LagRecord* record
 		pen = g_menu.main.aimbot.penetrate.get();
 	}
 
-	// write all data of this record l0l.
-	record->cache();
-
 	// iterate hitboxes.
 	for (const auto& it : m_hitboxes) {
 		done = false;
@@ -1126,48 +1126,68 @@ bool Aimbot::SelectTarget(LagRecord* record, const vec3_t& aim, float damage) {
 }
 
 void Aimbot::apply() {
-	bool attack, attack2;
+	bool attack = (g_cl.m_cmd->m_buttons & IN_ATTACK);
+	bool attack2 = (g_cl.m_weapon_id == REVOLVER && g_cl.m_cmd->m_buttons & IN_ATTACK2);
 
-	// attack states.
-	attack = (g_cl.m_cmd->m_buttons & IN_ATTACK);
-	attack2 = (g_cl.m_weapon_id == REVOLVER && g_cl.m_cmd->m_buttons & IN_ATTACK2);
+	if (!(attack || attack2))
+		return;
 
-	// ensure we're attacking.
-	if (attack || attack2) {
-		// choke every shot.
+	if (callbacks::IsDoubleTapOn() && m_target) {
+		// ARM — choke this shot.
 		*g_cl.m_packet = false;
+		m_dt.armed = true;
+		m_dt.arm_time = g_csgo.m_globals->m_curtime;
+		m_dt.arm_angle = m_angle;
+		m_dt.arm_seed = g_cl.m_cmd->m_random_seed;
+		m_dt.arm_tick = m_record
+			? game::TIME_TO_TICKS(m_record->m_sim_time + g_cl.m_lerp)
+			: g_cl.m_cmd->m_tick;
 
-		if (m_target) {
-			// make sure to aim at un-interpolated data.
-			// do this so BacktrackEntity selects the exact record.
-			if (m_record && !m_record->m_broke_lc)
-				g_cl.m_cmd->m_tick = game::TIME_TO_TICKS(m_record->m_sim_time + g_cl.m_lerp);
+		g_cl.m_cmd->m_view_angles = m_angle;
+		g_cl.m_cmd->m_tick = m_dt.arm_tick;
 
-			// set angles to target.
-			g_cl.m_cmd->m_view_angles = m_angle;
+		if (!g_menu.main.aimbot.silent.get())
+			g_csgo.m_engine->SetViewAngles(m_angle);
 
-			// if not silent aim, apply the viewangles.
-			if (!g_menu.main.aimbot.silent.get())
-				g_csgo.m_engine->SetViewAngles(m_angle);
+		if (g_menu.main.aimbot.norecoil.get())
+			g_cl.m_cmd->m_view_angles -= g_cl.m_local->m_aimPunchAngle()
+			* g_csgo.weapon_recoil_scale->GetFloat();
 
-			//add checkbox
-			g_visuals.DrawHitboxMatrix(m_record, colors::white, 2.f);
-		}
-
-		// nospread.
 		if (g_menu.main.aimbot.nospread.get() && g_menu.main.config.mode.get() == 1)
 			NoSpread();
 
-		// norecoil.
-		if (g_menu.main.aimbot.norecoil.get())
-			g_cl.m_cmd->m_view_angles -= g_cl.m_local->m_aimPunchAngle() * g_csgo.weapon_recoil_scale->GetFloat();
-
-		// store fired shot.
-		g_shots.OnShotFire(m_target ? m_target : nullptr, m_target ? m_damage : -1.f, g_cl.m_weapon_info->m_bullets, m_target ? m_record : nullptr);
-
-		// set that we fired.
+		g_shots.OnShotFire(m_target, m_damage, g_cl.m_weapon_info->m_bullets, m_record);
 		g_cl.m_shot = true;
+		return;
 	}
+
+	// Normal.
+	*g_cl.m_packet = false;
+
+	if (m_target) {
+		if (m_record && !m_record->m_broke_lc)
+			g_cl.m_cmd->m_tick = game::TIME_TO_TICKS(m_record->m_sim_time + g_cl.m_lerp);
+
+		g_cl.m_cmd->m_view_angles = m_angle;
+
+		if (!g_menu.main.aimbot.silent.get())
+			g_csgo.m_engine->SetViewAngles(m_angle);
+
+		g_visuals.DrawHitboxMatrix(m_record, colors::white, 2.f);
+	}
+
+	if (g_menu.main.aimbot.nospread.get() && g_menu.main.config.mode.get() == 1)
+		NoSpread();
+
+	if (g_menu.main.aimbot.norecoil.get())
+		g_cl.m_cmd->m_view_angles -= g_cl.m_local->m_aimPunchAngle()
+		* g_csgo.weapon_recoil_scale->GetFloat();
+
+	g_shots.OnShotFire(m_target ? m_target : nullptr,
+		m_target ? m_damage : -1.f,
+		g_cl.m_weapon_info->m_bullets,
+		m_target ? m_record : nullptr);
+	g_cl.m_shot = true;
 }
 
 void Aimbot::NoSpread() {
@@ -1182,5 +1202,31 @@ void Aimbot::NoSpread() {
 
 	// compensate.
 	g_cl.m_cmd->m_view_angles -= { -math::rad_to_deg(std::atan(spread.length_2d())), 0.f, math::rad_to_deg(std::atan2(spread.x, spread.y)) };
+}
+
+void Aimbot::FlushDoubleTap() {
+	if (!callbacks::IsDoubleTapOn() || !m_dt.armed)
+		return;
+
+	// Safety: disarm if we've waited too long (weapon fire rate exceeded).
+	if (g_csgo.m_globals->m_curtime - m_dt.arm_time > 0.2f) {
+		m_dt.armed = false;
+		return;
+	}
+
+	// === TICK 2: FLUSH ===
+	// Force sendpacket true so server receives both
+	// the choked shot and this tick's shot together.
+	*g_cl.m_packet = true;
+
+	// Re-apply the stored angle from the arm tick.
+	g_cl.m_cmd->m_view_angles = m_dt.arm_angle;
+	g_cl.m_cmd->m_tick = m_dt.arm_tick;
+	g_cl.m_cmd->m_random_seed = m_dt.arm_seed;
+
+	if (!g_menu.main.aimbot.silent.get())
+		g_csgo.m_engine->SetViewAngles(m_dt.arm_angle);
+
+	m_dt.armed = false;
 }
 

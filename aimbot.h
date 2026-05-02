@@ -216,18 +216,17 @@ public:
 
 	//doubletap stuff
 
-	bool m_double_tap;
+	// double tap state — lives outside tick flow
+	struct DoubleTapState_t {
+		bool  armed = false; // choked shot is sitting in buffer
+		float arm_time = 0.f;   // when we choked it
+		int   arm_seed = 0;     // random seed at choke time
+		ang_t arm_angle = {};    // angle we aimed at when choking
+		int   arm_tick = 0;     // cmd tick at choke time
+	} m_dt;
 
-	bool m_shifting;
-	bool m_charged;
-	int m_shift_cmd;
-	int m_shift_tickbase;
-	int m_charged_ticks;
-	int m_charge_timer;
-	int m_tick_to_shift;
-	int m_tick_to_shift_alternate;
-	int m_tick_to_recharge;
-	bool m_shifted;
+	bool m_double_tap;
+	void FlushDoubleTap();
 };
 
 extern Aimbot g_aimbot;

@@ -55,6 +55,28 @@ bool Hooks::CreateMove(float time, CUserCmd* cmd) {
 		// get bFinalTick off the stack.
 		g_cl.m_final_packet = stack.next().local(0x1b).as< bool* >();
 
+		if (callbacks::IsDoubleTapOn() && g_aimbot.m_dt.armed) {
+			// Safety: disarm if too much time passed (missed fire window).
+			if (g_csgo.m_globals->m_curtime - g_aimbot.m_dt.arm_time > 0.3f) {
+				g_aimbot.m_dt.armed = false;
+			}
+			else {
+				*g_cl.m_packet = true;
+				*g_cl.m_final_packet = true;
+				cmd->m_view_angles = g_aimbot.m_dt.arm_angle;
+				cmd->m_tick = g_aimbot.m_dt.arm_tick;
+				cmd->m_random_seed = g_aimbot.m_dt.arm_seed;
+				cmd->m_buttons |= IN_ATTACK;
+				g_aimbot.m_dt.armed = false;
+
+				math::NormalizeAngle(cmd->m_view_angles.y);
+
+				// Skip OnTick entirely — nothing else should touch
+				// this tick, we just need the flush to go through.
+				return false;
+			}
+		}
+
 		// invoke move function.
 		g_cl.OnTick(cmd);
 

@@ -218,10 +218,10 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
         "TAG: " + mem.tag + "\n"
         "MESSAGE: \"" + msg + "\"\n"
         "CONTEXT: " + context + "\n\n"
-        "TASK: Reply with ONE short toxic HVH CS:GO trash talk line.\n"
-        "RULES: Use hvh slang like 1, nn, dog, owned, nice resolver, hdf.\n"
-        "PERSONA: You are in a 1v1 HVH rage chat. You never act helpful. You always insult directly.\n"
-        "STYLE: Broken ghetto text. Max 28 words. No explanation.";
+        "TASK: Reply with ONE toxic HVH CS:GO trash talk line.\n"
+        "RULES: Use hvh slang like 1, nn, dog, owned, nice resolver, hdf. You always mention how cumhook v67 is better its always cumhook v67 thats the reason why youre better.\n"
+        "PERSONA: You are in a HVH rage chat. You never act helpful. You always insult directly.\n"
+        "STYLE: from da hood text. Max 28 words. No explanation.";
 
     g_cl.print(tfm::format("[BOT] queued response for: %s\n", name));
 

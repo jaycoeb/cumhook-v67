@@ -914,7 +914,7 @@ public:
 		pen_crosshair.setup(XOR("penetration crosshair"), XOR("pen_xhair"));
 		RegisterElement(&pen_crosshair, 1);
 
-		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("min damage override")});
+		indicators.setup(XOR("indicators"), XOR("indicators"), { XOR("lby"), XOR("lag compensation"), XOR("fake latency"), XOR("min damage override"), XOR("double tap") });
 		RegisterElement(&indicators, 1);
 
 		tracers.setup(XOR("grenade simulation"), XOR("tracers"));

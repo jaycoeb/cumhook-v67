@@ -351,6 +351,15 @@ void Visuals::StatusIndicators( ) {
 			indicators.push_back(ind);		
 	}
 
+	//DT
+	if (g_menu.main.visuals.indicators.get(4)) {
+		Indicator_t ind{ };
+		ind.color = g_aimbot.m_double_tap ? 0xff15c27b : 0xff0000ff;
+		ind.text = XOR("DT");
+
+		indicators.push_back(ind);
+	}
+
 	if( indicators.empty( ) )
 		return;
 
