@@ -27,22 +27,6 @@ namespace {
         s.erase( s.begin( ), std::find_if( s.begin( ), s.end( ), []( unsigned char ch ) { return !std::isspace( ch ); } ) );
         return s;
     }
-
- static const std::vector<std::string> k_lines = {
-    "1 nn owned",
-    "u dog cant hit me",
-    "nice resolver nn",
-    "owned sit",
-    "hdf nn dog",
-    "1 get better",
-    "resolver broken again",
-    "u missed everything nn",
-    "dog aim no spread cant save u",
- };
-
- static std::string get_line() {
-     return k_lines[rand() % k_lines.size()];
- }
 }
 
 
@@ -134,25 +118,25 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
 
     // basic reactions
     if (lower.find("rtv") != std::string::npos)
-        context = "Enemy wants to end the game (rtv). Call them scared.";
+        context = "Enemy wants to end the game (rtv). Call them scared. BE PERSONAL AND USE TARGET'S NAME.";
 
     else if (lower.find("lag") != std::string::npos)
-        context = "Enemy is complaining about lag. Mock them for excuses.";
+        context = "Enemy is complaining about lag. Mock them for excuses. BE PERSONAL AND USE TARGET'S NAME.";
 
     else if (lower.find("cheat") != std::string::npos || lower.find("hack") != std::string::npos)
-        context = "Enemy is accusing of cheating. insult their skill and talk about how much better cumhook v69 is.";
+        context = "Enemy is accusing of cheating. insult their skill and talk about how much better cumhook v69 is. BE PERSONAL AND USE TARGET'S NAME.";
 
     else if (lower.find("nice") != std::string::npos)
-        context = "Enemy said nice. Be sarcastic and disrespectful.";
+        context = "Enemy said nice. Be sarcastic and disrespectful. BE PERSONAL AND USE TARGET'S NAME.";
 
     else if (lower.find("?") != std::string::npos)
-        context = "Enemy is confused. Mock their intelligence.";
+        context = "Enemy is confused. Mock their intelligence. BE PERSONAL AND USE TARGET'S NAME.";
 
     else if (lower.find("ez") != std::string::npos)
-        context = "Enemy said ez. Assert dominance aggressively.";
+        context = "Enemy said ez. Assert dominance aggressively. BE PERSONAL AND USE TARGET'S NAME.";
 
     else
-        context = "General hvh trash talk. Be toxic.";
+        context = "General hvh trash talk. Be toxic. BE PERSONAL AND USE TARGET'S NAME.";
 
     if (msg.empty() || msg.size() < 3)
         return;
