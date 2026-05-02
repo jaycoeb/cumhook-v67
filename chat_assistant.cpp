@@ -1,34 +1,66 @@
 #include "includes.h"
+#include <deque>
+#include <mutex>
+#include <atomic>
+#include <string>
+#include <thread>
+
+struct PendingRequest {
+    std::string prompt;
+    std::string target_name;
+    uint32_t    execute_time;
+};
 
 namespace {
-    struct PendingRequest {
-        std::string prompt;
-        std::string target_name;   // ADD THIS
-        uint32_t    execute_time;
-    };
-
-    std::deque< PendingRequest > g_queue{};
-    uint32_t g_last_request_tick{};
-
-    struct PlayerMemory {
-        int insults = 0;
-        int deaths = 0;
-        int kills = 0;
-        std::string tag; // "nn dog", "resolver victim", etc
-        uint32_t last_seen = 0;
-    };
-
-    static std::unordered_map<int, PlayerMemory> g_memory;
-
     constexpr uint32_t k_rate_limit_ms = 5000;
     constexpr size_t   k_max_prompt_len = 256;
 
- static std::string trim_left( std::string s ) {
-        s.erase( s.begin( ), std::find_if( s.begin( ), s.end( ), []( unsigned char ch ) { return !std::isspace( ch ); } ) );
+    struct PlayerMemory {
+        int         insults = 0;
+        int         deaths = 0;
+        int         kills = 0;
+        std::string tag;
+        uint32_t    last_seen = 0;
+    };
+
+    std::deque<PendingRequest>            g_queue{};
+    uint32_t                              g_last_request_tick{};
+    std::mutex                            g_queue_mutex;
+    std::atomic<bool>                     g_request_in_flight{ false };
+    std::unordered_map<int, PlayerMemory> g_memory;
+
+    bool pop_request(PendingRequest& out) {
+        std::lock_guard<std::mutex> lock(g_queue_mutex);
+
+        if (g_queue.empty())
+            return false;
+
+        uint32_t now = g_winapi.GetTickCount();
+        auto& req = g_queue.front();
+
+        if (now < req.execute_time)
+            return false;
+
+        if (now - g_last_request_tick < k_rate_limit_ms)
+            return false;
+
+        g_last_request_tick = now;
+        out = req;
+        g_queue.pop_front();
+        return true;
+    }
+
+    struct RequestGuard {
+        std::atomic<bool>& flag;
+        RequestGuard(std::atomic<bool>& f) : flag(f) { flag = true; }
+        ~RequestGuard() { flag = false; }
+    };
+
+    std::string trim_left(std::string s) {
+        s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
         return s;
     }
 }
-
 
 int get_player_index_by_name(const char* name) {
     if (!name)
@@ -46,27 +78,20 @@ int get_player_index_by_name(const char* name) {
     return -1;
 }
 
-
 bool chat_assistant::test_connection() {
     std::string api_key = g_menu.main.misc.gemini_api_key.get_string();
-    // trim whitespace/newlines from copy-pasted keys.
+
     api_key.erase(api_key.begin(), std::find_if(api_key.begin(), api_key.end(), [](unsigned char ch) { return !std::isspace(ch); }));
     api_key.erase(std::find_if(api_key.rbegin(), api_key.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), api_key.end());
+
     if (api_key.empty())
         return false;
 
     nlohmann::json body{};
-
     body["model"] = "llama-3.1-8b-instant";
-
     body["messages"] = {
-        {
-            {"role", "user"},
-            {"content", "ping"}
-        }
+        { { "role", "user" }, { "content", "ping" } }
     };
-
-    std::string path = "/openai/v1/chat/completions";
 
     std::wstring headers =
         L"Authorization: Bearer " + util::MultiByteToWide(api_key) + L"\r\n" +
@@ -74,7 +99,7 @@ bool chat_assistant::test_connection() {
 
     auto res = http::post(
         L"api.groq.com",
-        util::MultiByteToWide(path).c_str(),
+        L"/openai/v1/chat/completions",
         body.dump(),
         headers.c_str()
     );
@@ -91,13 +116,10 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     if (!callbacks::IsAITrashTalkerOn())
         return;
 
-    if (!text || !*text)
+    if (!text || !*text || !name)
         return;
 
-    if (!name)
-        return;
-
-    // don't respond to ourselves
+    // don't respond to ourselves.
     player_info_t info{};
     int local = g_csgo.m_engine->GetLocalPlayer();
     if (local <= 0)
@@ -108,62 +130,28 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     if (std::strcmp(name, info.m_name) == 0)
         return;
 
-    std::string msg{ text };
-    msg = trim_left(msg);
+    std::string msg = trim_left(std::string(text));
+    if (msg.size() < 3)
+        return;
 
     std::string lower = msg;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
     std::string context;
 
-    // basic reactions
-    if (lower.find("rtv") != std::string::npos)
-        context = "Enemy wants to end the game (rtv). Call them scared. BE PERSONAL AND USE TARGET'S NAME.";
+    if (lower.find("rtv") != std::string::npos) context = "Enemy wants to end the game (rtv). Call them scared. BE PERSONAL AND USE TARGET'S NAME.";
+    else if (lower.find("lag") != std::string::npos) context = "Enemy is complaining about lag. Mock them for excuses. BE PERSONAL AND USE TARGET'S NAME.";
+    else if (lower.find("cheat") != std::string::npos ||
+        lower.find("hack") != std::string::npos) context = "Enemy is accusing of cheating. insult their skill. BE PERSONAL AND USE TARGET'S NAME.";
+    else if (lower.find("nice") != std::string::npos) context = "Enemy said nice. Be sarcastic and disrespectful. BE PERSONAL AND USE TARGET'S NAME.";
+    else if (lower.find("?") != std::string::npos) context = "Enemy is confused. Mock their intelligence. BE PERSONAL AND USE TARGET'S NAME.";
+    else if (lower.find("ez") != std::string::npos) context = "Enemy said ez. Assert dominance aggressively. BE PERSONAL AND USE TARGET'S NAME.";
+    else                                                    context = "General hvh trash talk. Be toxic. USE player NAME.";
 
-    else if (lower.find("lag") != std::string::npos)
-        context = "Enemy is complaining about lag. Mock them for excuses. BE PERSONAL AND USE TARGET'S NAME.";
-
-    else if (lower.find("cheat") != std::string::npos || lower.find("hack") != std::string::npos)
-        context = "Enemy is accusing of cheating. insult their skill and talk about how much better cumhook v69 is. BE PERSONAL AND USE TARGET'S NAME.";
-
-    else if (lower.find("nice") != std::string::npos)
-        context = "Enemy said nice. Be sarcastic and disrespectful. BE PERSONAL AND USE TARGET'S NAME.";
-
-    else if (lower.find("?") != std::string::npos)
-        context = "Enemy is confused. Mock their intelligence. BE PERSONAL AND USE TARGET'S NAME.";
-
-    else if (lower.find("ez") != std::string::npos)
-        context = "Enemy said ez. Assert dominance aggressively. BE PERSONAL AND USE TARGET'S NAME.";
-
-    else
-        context = "General hvh trash talk. Be toxic. BE PERSONAL AND USE TARGET'S NAME.";
-
-    if (msg.empty() || msg.size() < 3)
-        return;
-
-    // 🔽 enemy-only filter 🔽
-
-
+    // enemy-only filter.
     int idx = get_player_index_by_name(name);
     if (idx == -1)
         return;
-
-    auto& mem = g_memory[idx];
-    mem.last_seen = g_winapi.GetTickCount();
-    mem.insults++;
-
-    if (mem.tag.empty()) {
-        static const std::vector<std::string> tags = {
-            "nn dog",
-            "resolver victim",
-            "1 bot",
-            "free kill",
-            "no aim",
-            "owned kid"
-        };
-
-        mem.tag = tags[rand() % tags.size()];
-    }
 
     auto ent = g_csgo.m_entlist->GetClientEntity(idx);
     if (!ent)
@@ -176,11 +164,19 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     if (player->m_iTeamNum() == g_cl.m_local->m_iTeamNum())
         return;
 
-    // 🔼 end filter 🔼
+    auto& mem = g_memory[idx];
+    mem.last_seen = g_winapi.GetTickCount();
+    mem.insults++;
+
+    if (mem.tag.empty()) {
+        static const std::vector<std::string> tags = {
+            "nn dog", "resolver victim", "1 bot", "free kill", "no aim", "owned kid"
+        };
+        mem.tag = tags[rand() % tags.size()];
+    }
 
     if (msg.size() > k_max_prompt_len)
         msg.resize(k_max_prompt_len);
-
 
     std::string full =
         "TARGET: " + std::string(name) + "\n"
@@ -190,108 +186,81 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
         "TASK: Reply with ONE short toxic HVH CS:GO trash talk line.\n"
         "RULES: Use hvh slang like 1, nn, dog, owned, nice resolver, hdf.\n"
         "PERSONA: You are in a 1v1 HVH rage chat. You never act helpful. You always insult directly.\n"
-        "STYLE: Broken ghetto text. Max 12 words. No explanation.";
+        "STYLE: Broken ghetto text. Max 28 words. No explanation.";
 
-    g_cl.print(tfm::format("[BOT] prompt: %s\n", full.c_str()));
+    g_cl.print(tfm::format("[BOT] queued response for: %s\n", name));
 
     uint32_t now = g_winapi.GetTickCount();
     uint32_t delay = 1000 + (rand() % 1000);
 
-    g_queue.push_back(PendingRequest{
-        full,
-        std::string(name),   // ADD THIS
-        now + delay
-        });
+    {
+        std::lock_guard<std::mutex> lock(g_queue_mutex);
+        g_queue.push_back(PendingRequest{ full, std::string(name), now + delay });
+    }
 }
 
 void chat_assistant::think() {
     if (!callbacks::IsAITrashTalkerOn())
         return;
 
-    if (g_queue.empty())
+    if (g_request_in_flight)
         return;
 
-    uint32_t now = g_winapi.GetTickCount();
-
-    auto& req = g_queue.front();
-
-    // not ready yet → wait
-    if (now < req.execute_time)
+    PendingRequest req;
+    if (!pop_request(req))
         return;
 
-    // rate limit (optional safety)
-    if (now - g_last_request_tick < k_rate_limit_ms)
-        return;
+    // fire HTTP on a background thread so the game thread is never blocked.
+    std::thread([req]() {
+        RequestGuard guard(g_request_in_flight);
 
-    g_last_request_tick = now;
-    g_queue.pop_front();
+        std::string api_key = g_menu.main.misc.gemini_api_key.get_string();
+        api_key.erase(api_key.begin(), std::find_if(api_key.begin(), api_key.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+        api_key.erase(std::find_if(api_key.rbegin(), api_key.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), api_key.end());
 
-    std::string api_key = g_menu.main.misc.gemini_api_key.get_string();
-
-    api_key.erase(api_key.begin(), std::find_if(api_key.begin(), api_key.end(),
-        [](unsigned char ch) { return !std::isspace(ch); }));
-
-    api_key.erase(std::find_if(api_key.rbegin(), api_key.rend(),
-        [](unsigned char ch) { return !std::isspace(ch); }).base(), api_key.end());
-
-    if (api_key.empty()) {
-        g_cl.print("[BOT] Groq API key missing\n");
-        return;
-    }
-
-    nlohmann::json body{};
-    body["model"] = "llama-3.1-8b-instant";
-
-    body["messages"] = {
-        {
-            {"role", "system"},
-            {"content",
-            "You are a toxic HVH CS:GO player. "
-            "You adapt your trash talk based on context. "
-            "Use slang like 1, nn, dog, owned, nice resolver, hdf. "
-            "Short replies only. Never explain. Never act helpful."}
-        },
-        {
-            {"role", "user"},
-            {"content", req.prompt}
+        if (api_key.empty()) {
+            g_cl.print("[BOT] API key missing\n");
+            return;
         }
-    };
 
-    std::wstring headers =
-        L"Authorization: Bearer " + util::MultiByteToWide(api_key) + L"\r\n" +
-        L"Content-Type: application/json\r\n";
+        nlohmann::json body{};
+        body["model"] = "llama-3.1-8b-instant";
+        body["messages"] = {
+            { { "role", "system" }, { "content", "You are a toxic HVH CS:GO player. short replies only." } },
+            { { "role", "user"   }, { "content", req.prompt } }
+        };
 
-    auto res = http::post(
-        L"api.groq.com",
-        util::MultiByteToWide("/openai/v1/chat/completions").c_str(),
-        body.dump(),
-        headers.c_str()
-    );
+        std::wstring headers =
+            L"Authorization: Bearer " + util::MultiByteToWide(api_key) + L"\r\n" +
+            L"Content-Type: application/json\r\n";
 
-    if (!res.ok) {
-        g_cl.print(tfm::format("[BOT] request failed: %s\n", res.error.c_str()));
-        return;
-    }
+        auto res = http::post(
+            L"api.groq.com",
+            L"/openai/v1/chat/completions",
+            body.dump(),
+            headers.c_str()
+        );
 
-    try {
-        auto json = nlohmann::json::parse(res.body);
-        std::string reply =
-            json["choices"][0]["message"]["content"];
+        if (!res.ok) {
+            g_cl.print(tfm::format("[BOT] request failed (http %u)\n", res.status));
+            return;
+        }
 
-        std::string safe = reply;
-        safe.erase(std::remove(safe.begin(), safe.end(), '\n'), safe.end());
-        safe.erase(std::remove(safe.begin(), safe.end(), '"'), safe.end());
+        try {
+            auto        json = nlohmann::json::parse(res.body);
+            std::string reply = json["choices"][0]["message"]["content"];
 
-        if (safe.size() > 120)
-            safe.resize(120);
+            reply.erase(std::remove(reply.begin(), reply.end(), '\n'), reply.end());
+            reply.erase(std::remove(reply.begin(), reply.end(), '"'), reply.end());
 
-        std::string final_msg =
-            req.target_name + std::string(": ") + safe;
+            if (reply.size() > 120)
+                reply.resize(120);
 
-        g_csgo.m_engine->ExecuteClientCmd(("say " + final_msg).c_str());
-
-    }
-    catch (...) {
-        g_cl.print("[BOT] parse error\n");
-    }
+            std::string final_msg = req.target_name + ": " + reply;
+            g_csgo.m_engine->ExecuteClientCmd(("say " + final_msg).c_str());
+        }
+        catch (...) {
+            g_cl.print("[BOT] parse error\n");
+        }
+        }).detach();
 }
