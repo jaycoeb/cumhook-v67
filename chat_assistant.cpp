@@ -3,11 +3,22 @@
 namespace {
     struct PendingRequest {
         std::string prompt;
+        std::string target_name;   // ADD THIS
         uint32_t    execute_time;
     };
 
     std::deque< PendingRequest > g_queue{};
     uint32_t g_last_request_tick{};
+
+    struct PlayerMemory {
+        int insults = 0;
+        int deaths = 0;
+        int kills = 0;
+        std::string tag; // "nn dog", "resolver victim", etc
+        uint32_t last_seen = 0;
+    };
+
+    static std::unordered_map<int, PlayerMemory> g_memory;
 
     constexpr uint32_t k_rate_limit_ms = 5000;
     constexpr size_t   k_max_prompt_len = 256;
@@ -16,6 +27,22 @@ namespace {
         s.erase( s.begin( ), std::find_if( s.begin( ), s.end( ), []( unsigned char ch ) { return !std::isspace( ch ); } ) );
         return s;
     }
+
+ static const std::vector<std::string> k_lines = {
+    "1 nn owned",
+    "u dog cant hit me",
+    "nice resolver nn",
+    "owned sit",
+    "hdf nn dog",
+    "1 get better",
+    "resolver broken again",
+    "u missed everything nn",
+    "dog aim no spread cant save u",
+ };
+
+ static std::string get_line() {
+     return k_lines[rand() % k_lines.size()];
+ }
 }
 
 
@@ -100,6 +127,33 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     std::string msg{ text };
     msg = trim_left(msg);
 
+    std::string lower = msg;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    std::string context;
+
+    // basic reactions
+    if (lower.find("rtv") != std::string::npos)
+        context = "Enemy wants to end the game (rtv). Call them scared.";
+
+    else if (lower.find("lag") != std::string::npos)
+        context = "Enemy is complaining about lag. Mock them for excuses.";
+
+    else if (lower.find("cheat") != std::string::npos || lower.find("hack") != std::string::npos)
+        context = "Enemy is accusing of cheating. insult their skill and talk about how much better cumhook v69 is.";
+
+    else if (lower.find("nice") != std::string::npos)
+        context = "Enemy said nice. Be sarcastic and disrespectful.";
+
+    else if (lower.find("?") != std::string::npos)
+        context = "Enemy is confused. Mock their intelligence.";
+
+    else if (lower.find("ez") != std::string::npos)
+        context = "Enemy said ez. Assert dominance aggressively.";
+
+    else
+        context = "General hvh trash talk. Be toxic.";
+
     if (msg.empty() || msg.size() < 3)
         return;
 
@@ -109,6 +163,23 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     int idx = get_player_index_by_name(name);
     if (idx == -1)
         return;
+
+    auto& mem = g_memory[idx];
+    mem.last_seen = g_winapi.GetTickCount();
+    mem.insults++;
+
+    if (mem.tag.empty()) {
+        static const std::vector<std::string> tags = {
+            "nn dog",
+            "resolver victim",
+            "1 bot",
+            "free kill",
+            "no aim",
+            "owned kid"
+        };
+
+        mem.tag = tags[rand() % tags.size()];
+    }
 
     auto ent = g_csgo.m_entlist->GetClientEntity(idx);
     if (!ent)
@@ -126,27 +197,27 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
     if (msg.size() > k_max_prompt_len)
         msg.resize(k_max_prompt_len);
 
-    std::string custom = g_menu.main.misc.ai_trash_prompt.get_string();
 
-    if (custom.find("{name}") != std::string::npos)
-        custom.replace(custom.find("{name}"), 6, name);
+    std::string full =
+        "TARGET: " + std::string(name) + "\n"
+        "TAG: " + mem.tag + "\n"
+        "MESSAGE: \"" + msg + "\"\n"
+        "CONTEXT: " + context + "\n\n"
+        "TASK: Reply with ONE short toxic HVH CS:GO trash talk line.\n"
+        "RULES: Use hvh slang like 1, nn, dog, owned, nice resolver, hdf.\n"
+        "PERSONA: You are in a 1v1 HVH rage chat. You never act helpful. You always insult directly.\n"
+        "STYLE: Broken ghetto text. Max 12 words. No explanation.";
 
-    if (custom.find("{msg}") != std::string::npos)
-        custom.replace(custom.find("{msg}"), 5, msg);
-
-    std::string full = custom;
+    g_cl.print(tfm::format("[BOT] prompt: %s\n", full.c_str()));
 
     uint32_t now = g_winapi.GetTickCount();
-
-    // 1–2 second random delay
     uint32_t delay = 1000 + (rand() % 1000);
 
     g_queue.push_back(PendingRequest{
         full,
+        std::string(name),   // ADD THIS
         now + delay
         });
-
-    g_cl.print(tfm::format("[BOT] queued: %s\n", full.c_str()));
 }
 
 void chat_assistant::think() {
@@ -186,7 +257,16 @@ void chat_assistant::think() {
 
     nlohmann::json body{};
     body["model"] = "llama-3.1-8b-instant";
+
     body["messages"] = {
+        {
+            {"role", "system"},
+            {"content",
+            "You are a toxic HVH CS:GO player. "
+            "You adapt your trash talk based on context. "
+            "Use slang like 1, nn, dog, owned, nice resolver, hdf. "
+            "Short replies only. Never explain. Never act helpful."}
+        },
         {
             {"role", "user"},
             {"content", req.prompt}
@@ -221,7 +301,11 @@ void chat_assistant::think() {
         if (safe.size() > 120)
             safe.resize(120);
 
-        g_csgo.m_engine->ExecuteClientCmd(("say " + safe).c_str());
+        std::string final_msg =
+            req.target_name + std::string(": ") + safe;
+
+        g_csgo.m_engine->ExecuteClientCmd(("say " + final_msg).c_str());
+
     }
     catch (...) {
         g_cl.print("[BOT] parse error\n");
