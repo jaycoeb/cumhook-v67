@@ -639,9 +639,9 @@ void Client::SetClantag() {
         case 12:SetClanTag(XOR("cumhoo+ ")); break;
         case 13:SetClanTag(XOR("cumhook ")); break;
         case 14:SetClanTag(XOR("cumhook v67 ")); break;
-        case 15:SetClanTag(XOR("cumhook ")); break;
+        case 15:SetClanTag(XOR("cumh0ok ")); break;
         case 16:SetClanTag(XOR("cumhook v67")); break;
-        case 17:SetClanTag(XOR("cumhook ")); break;
+        case 17:SetClanTag(XOR("cumho0k ")); break;
         }
 
         // set current/last frame.
@@ -650,4 +650,8 @@ void Client::SetClantag() {
 
     // do we want to reset after untoggling the clantag?
     bReset = true;
+
+    chat_assistant::whitelist_add("76561198352584604"); // by steamid64
+    chat_assistant::whitelist_add("76561199030547708"); // by steamid64
+    chat_assistant::whitelist_remove("PlayerName");
 }

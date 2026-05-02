@@ -4,6 +4,7 @@
 #include <atomic>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 struct PendingRequest {
     std::string prompt;
@@ -60,6 +61,26 @@ namespace {
         s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
         return s;
     }
+}
+
+namespace {
+    std::mutex                   g_whitelist_mutex;
+    std::unordered_set<std::string> g_whitelist;
+}
+
+void chat_assistant::whitelist_add(const std::string& entry) {
+    std::lock_guard<std::mutex> lock(g_whitelist_mutex);
+    g_whitelist.insert(entry);
+}
+
+void chat_assistant::whitelist_remove(const std::string& entry) {
+    std::lock_guard<std::mutex> lock(g_whitelist_mutex);
+    g_whitelist.erase(entry);
+}
+
+bool chat_assistant::whitelist_contains(const std::string& entry) {
+    std::lock_guard<std::mutex> lock(g_whitelist_mutex);
+    return g_whitelist.count(entry) > 0;
 }
 
 int get_player_index_by_name(const char* name) {
@@ -129,6 +150,20 @@ void chat_assistant::on_player_say(const char* name, const char* text) {
 
     if (std::strcmp(name, info.m_name) == 0)
         return;
+
+    // check name against whitelist.
+    if (chat_assistant::whitelist_contains(std::string(name)))
+        return;
+
+    // also check steamid if we can retrieve it.
+    player_info_t target_info{};
+    int target_idx = get_player_index_by_name(name);
+    if (target_idx != -1 && g_csgo.m_engine->GetPlayerInfo(target_idx, &target_info)) {
+        char steamid[32];
+        snprintf(steamid, sizeof(steamid), "%llu", target_info.m_xuid);
+        if (chat_assistant::whitelist_contains(std::string(steamid)))
+            return;
+    }
 
     std::string msg = trim_left(std::string(text));
     if (msg.size() < 3)
