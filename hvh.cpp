@@ -539,22 +539,20 @@ void HVH::DoRealAntiAim() {
                 break;
             }
 
-            if (!*g_cl.m_packet) {
-                bool moving = m_mode == AntiAimMode::WALK || m_mode == AntiAimMode::AIR;
+            // Only run lastmove breaker when moving fast enough that
+                // edge cover isn't relevant — peeking around walls is slow.
+                bool too_slow_to_break = g_cl.m_local->m_vecVelocity().length_2d() < 100.f;
 
-                // Check if edge AA fired this frame by seeing if m_direction
-                // was overridden — compare against view+180 (the default backwards).
+            if (!*g_cl.m_packet && !too_slow_to_break) {
                 float expected_dir = math::NormalizedAngle(m_view + 180.f);
-                float actual_dir = m_direction;
-                bool  edge_active = fabsf(math::NormalizedAngle(actual_dir - expected_dir)) > 20.f;
+                bool  edge_active = fabsf(math::NormalizedAngle(m_direction - expected_dir)) > 20.f;
 
-                if (moving && !edge_active) {
+                if ((m_mode == AntiAimMode::WALK || m_mode == AntiAimMode::AIR) && !edge_active) {
                     static int  lm_break_tick = 0;
                     static bool lm_flip = false;
                     lm_break_tick++;
 
                     int interval = 2 + (lm_break_tick % 3);
-
                     if (lm_break_tick % interval == 0) {
                         lm_flip = !lm_flip;
                         g_cl.m_cmd->m_view_angles.y += lm_flip ? 58.f : -58.f;

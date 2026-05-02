@@ -17,142 +17,157 @@ void Movement::JumpRelated( ) {
 	}
 }
 
-void Movement::Strafe( ) {
+void Movement::Strafe() {
 	vec3_t velocity;
 	float  delta, abs_delta, velocity_angle, velocity_delta, correct;
 
-	// don't strafe while noclipping or on ladders..
-	if( g_cl.m_local->m_MoveType( ) == MOVETYPE_NOCLIP || g_cl.m_local->m_MoveType( ) == MOVETYPE_LADDER )
+	if (g_cl.m_local->m_MoveType() == MOVETYPE_NOCLIP || g_cl.m_local->m_MoveType() == MOVETYPE_LADDER)
 		return;
 
-	// disable strafing while pressing shift.
-	// don't strafe if not holding primary jump key.
-	if( ( g_cl.m_buttons & IN_SPEED ) || !( g_cl.m_buttons & IN_JUMP ) || ( g_cl.m_flags & FL_ONGROUND ) )
+	if ((g_cl.m_buttons & IN_SPEED) || !(g_cl.m_buttons & IN_JUMP) || (g_cl.m_flags & FL_ONGROUND))
 		return;
 
-	// get networked velocity ( maybe absvelocity better here? ).
-	// meh, should be predicted anyway? ill see.
-	velocity = g_cl.m_local->m_vecVelocity( );
+	velocity = g_cl.m_local->m_vecVelocity();
+	m_speed = velocity.length_2d();
 
-	// get the velocity len2d ( speed ).
-	m_speed = velocity.length_2d( );
+	m_ideal = (m_speed > 0.f) ? math::rad_to_deg(std::asin(15.f / m_speed)) : 90.f;
+	m_ideal2 = (m_speed > 0.f) ? math::rad_to_deg(std::asin(30.f / m_speed)) : 90.f;
 
-	// compute the ideal strafe angle for our velocity.
-	m_ideal = ( m_speed > 0.f ) ? math::rad_to_deg( std::asin( 15.f / m_speed ) ) : 90.f;
-	m_ideal2 = ( m_speed > 0.f ) ? math::rad_to_deg( std::asin( 30.f / m_speed ) ) : 90.f;
+	math::clamp(m_ideal, 0.f, 90.f);
+	math::clamp(m_ideal2, 0.f, 90.f);
 
-	// some additional sanity.
-	math::clamp( m_ideal, 0.f, 90.f );
-	math::clamp( m_ideal2, 0.f, 90.f );
+	m_mins = g_cl.m_local->m_vecMins();
+	m_maxs = g_cl.m_local->m_vecMaxs();
+	m_origin = g_cl.m_local->m_vecOrigin();
 
-	// save entity bounds ( used much in circle-strafer ).
-	m_mins = g_cl.m_local->m_vecMins( );
-	m_maxs = g_cl.m_local->m_vecMaxs( );
-
-	// save our origin
-	m_origin = g_cl.m_local->m_vecOrigin( );
-
-	// for changing direction.
-	// we want to change strafe direction every call.
 	m_switch_value *= -1.f;
-
-	// for allign strafer.
 	++m_strafe_index;
 
-	// cancel out any forwardmove values.
 	g_cl.m_cmd->m_forward_move = 0.f;
 
-	// do allign strafer.
-	if( g_input.GetKeyState( g_menu.main.movement.astrafe.get( ) ) ) {
-		float angle = std::max( m_ideal2, 4.f );
-
-		if( angle > m_ideal2 && !( m_strafe_index % 5 ) )
+	// =========================================================
+	// ALIGN STRAFER
+	// =========================================================
+	if (g_input.GetKeyState(g_menu.main.movement.astrafe.get())) {
+		float angle = std::max(m_ideal2, 4.f);
+		if (angle > m_ideal2 && !(m_strafe_index % 5))
 			angle = m_ideal2;
 
-		// add the computed step to the steps of the previous circle iterations.
-		m_circle_yaw = math::NormalizedAngle( m_circle_yaw + angle );
-
-		// apply data to usercmd.
+		m_circle_yaw = math::NormalizedAngle(m_circle_yaw + angle);
 		g_cl.m_cmd->m_view_angles.y = m_circle_yaw;
 		g_cl.m_cmd->m_side_move = -450.f;
-
 		return;
 	}
 
-	// do ciclestrafer
-	else if( g_input.GetKeyState( g_menu.main.movement.cstrafe.get( ) ) ) {
-		// if no duck jump.
-		if( !g_menu.main.movement.airduck.get( ) ) {
-			// crouch to fit into narrow areas.
+	// =========================================================
+	// CIRCLE STRAFER
+	// =========================================================
+	if (g_input.GetKeyState(g_menu.main.movement.cstrafe.get())) {
+		if (!g_menu.main.movement.airduck.get())
 			g_cl.m_cmd->m_buttons |= IN_DUCK;
-		}
 
-		DoPrespeed( );
+		DoPrespeed();
 		return;
 	}
 
-	else if( g_input.GetKeyState( g_menu.main.movement.zstrafe.get( ) ) ) {
-		float freq = ( g_menu.main.movement.z_freq.get( ) * 0.2f ) * g_csgo.m_globals->m_realtime;
-
-		// range [ 1, 100 ], aka grenerates a factor.
-		float factor = g_menu.main.movement.z_dist.get( ) * 0.5f;
-
-		g_cl.m_cmd->m_view_angles.y += ( factor * std::sin( freq ) );
+	// =========================================================
+	// Z STRAFER
+	// =========================================================
+	if (g_input.GetKeyState(g_menu.main.movement.zstrafe.get())) {
+		float freq = (g_menu.main.movement.z_freq.get() * 0.2f) * g_csgo.m_globals->m_realtime;
+		float factor = g_menu.main.movement.z_dist.get() * 0.5f;
+		g_cl.m_cmd->m_view_angles.y += (factor * std::sin(freq));
 	}
 
-	if( !g_menu.main.movement.autostrafe.get( ) )
+	if (!g_menu.main.movement.autostrafe.get())
 		return;
 
-	// get our viewangle change.
-	delta = math::NormalizedAngle( g_cl.m_cmd->m_view_angles.y - m_old_yaw );
+	// =========================================================
+	// WASD-AWARE AUTO STRAFER
+	// Reads which movement keys are held and derives a wished
+	// direction from them. Strafes optimally toward that direction
+	// so W+D circles right, S alone strafes backward, etc.
+	// =========================================================
 
-	// convert to absolute change.
-	abs_delta = std::abs( delta );
+	// Build wish direction from held keys, same as engine does.
+	bool w = g_cl.m_buttons & IN_FORWARD;
+	bool s = g_cl.m_buttons & IN_BACK;
+	bool a = g_cl.m_buttons & IN_MOVELEFT;
+	bool d = g_cl.m_buttons & IN_MOVERIGHT;
 
-	// save old yaw for next call.
+	float wish_x = 0.f, wish_y = 0.f;
+	if (w) wish_x += 1.f;
+	if (s) wish_x -= 1.f;
+	if (d) wish_y -= 1.f; // engine: right = negative sidemove
+	if (a) wish_y += 1.f;
+
+	bool any_key = w || s || a || d;
+
+	// Mouse delta as fallback when no keys held.
+	delta = math::NormalizedAngle(g_cl.m_cmd->m_view_angles.y - m_old_yaw);
+	abs_delta = std::abs(delta);
 	m_circle_yaw = m_old_yaw = g_cl.m_cmd->m_view_angles.y;
 
-	// set strafe direction based on mouse direction change.
-	if( delta > 0.f )
-		g_cl.m_cmd->m_side_move = -450.f;
+	if (any_key) {
+		// Convert wish vector to an angle relative to view.
+		float wish_yaw_local = math::rad_to_deg(std::atan2(wish_y, wish_x));
 
-	else if( delta < 0.f )
-		g_cl.m_cmd->m_side_move = 450.f;
+		// Absolute wish direction in world space.
+		float wish_dir = math::NormalizedAngle(g_cl.m_cmd->m_view_angles.y + wish_yaw_local);
 
-	// we can accelerate more, because we strafed less then needed
-	// or we got of track and need to be retracked.
+		// Velocity direction in world space.
+		velocity_angle = (m_speed > 0.f)
+			? math::rad_to_deg(std::atan2(velocity.y, velocity.x))
+			: wish_dir;
 
-	/*
-	* data struct
-	* 68 74 74 70 73 3a 2f 2f 73 74 65 61 6d 63 6f 6d 6d 75 6e 69 74 79 2e 63 6f 6d 2f 69 64 2f 73 69 6d 70 6c 65 72 65 61 6c 69 73 74 69 63 2f
-	*/
+		// Delta between where we want to go and where we're going.
+		velocity_delta = math::NormalizedAngle(wish_dir - velocity_angle);
 
-	if( abs_delta <= m_ideal || abs_delta >= 30.f ) {
-		// compute angle of the direction we are traveling in.
-		velocity_angle = math::rad_to_deg( std::atan2( velocity.y, velocity.x ) );
-
-		// get the delta between our direction and where we are looking at.
-		velocity_delta = math::NormalizedAngle( g_cl.m_cmd->m_view_angles.y - velocity_angle );
-
-		// correct our strafe amongst the path of a circle.
-		correct = m_ideal2 * 2.f;
-
-		if( velocity_delta <= correct || m_speed <= 15.f ) {
-			// not moving mouse, switch strafe every tick.
-			if( -correct <= velocity_delta || m_speed <= 15.f ) {
-				g_cl.m_cmd->m_view_angles.y += ( m_ideal * m_switch_value );
-				g_cl.m_cmd->m_side_move = 450.f * m_switch_value;
-			}
-
-			else {
-				g_cl.m_cmd->m_view_angles.y = velocity_angle - correct;
-				g_cl.m_cmd->m_side_move = 450.f;
-			}
+		// Optimal strafe: add ideal angle toward wish direction,
+		// set sidemove to accelerate in that direction.
+		if (velocity_delta > 0.f) {
+			g_cl.m_cmd->m_view_angles.y = math::NormalizedAngle(velocity_angle + m_ideal);
+			g_cl.m_cmd->m_side_move = -450.f;
+		}
+		else if (velocity_delta < 0.f) {
+			g_cl.m_cmd->m_view_angles.y = math::NormalizedAngle(velocity_angle - m_ideal);
+			g_cl.m_cmd->m_side_move = 450.f;
+		}
+		else {
+			// Perfectly aligned — switch to maintain speed.
+			g_cl.m_cmd->m_view_angles.y += (m_ideal * m_switch_value);
+			g_cl.m_cmd->m_side_move = 450.f * m_switch_value;
 		}
 
-		else {
-			g_cl.m_cmd->m_view_angles.y = velocity_angle + correct;
+		// Zero forwardmove — sidemove does all the work.
+		g_cl.m_cmd->m_forward_move = 0.f;
+	}
+	else {
+		// No keys held — fall back to mouse-delta strafer (original behaviour).
+		if (delta > 0.f)
 			g_cl.m_cmd->m_side_move = -450.f;
+		else if (delta < 0.f)
+			g_cl.m_cmd->m_side_move = 450.f;
+
+		if (abs_delta <= m_ideal || abs_delta >= 30.f) {
+			velocity_angle = math::rad_to_deg(std::atan2(velocity.y, velocity.x));
+			velocity_delta = math::NormalizedAngle(g_cl.m_cmd->m_view_angles.y - velocity_angle);
+			correct = m_ideal2 * 2.f;
+
+			if (velocity_delta <= correct || m_speed <= 15.f) {
+				if (-correct <= velocity_delta || m_speed <= 15.f) {
+					g_cl.m_cmd->m_view_angles.y += (m_ideal * m_switch_value);
+					g_cl.m_cmd->m_side_move = 450.f * m_switch_value;
+				}
+				else {
+					g_cl.m_cmd->m_view_angles.y = velocity_angle - correct;
+					g_cl.m_cmd->m_side_move = 450.f;
+				}
+			}
+			else {
+				g_cl.m_cmd->m_view_angles.y = velocity_angle + correct;
+				g_cl.m_cmd->m_side_move = -450.f;
+			}
 		}
 	}
 }
