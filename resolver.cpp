@@ -413,8 +413,38 @@ void Resolver::MatchShot(AimPlayer* data, LagRecord* record) {
     }
 }
 
-void Resolver::SetMode(LagRecord* record) {
+void Resolver::SetMode(LagRecord* record, AimPlayer* data) {
     float speed = record->m_anim_velocity.length();
+
+    if (data->m_records.size() >= 2) {
+        LagRecord* prev = data->m_records[1].get();
+        if (prev && prev->valid()) {
+            float real_delta = (record->m_origin - prev->m_origin).length();
+            float time_delta = record->m_sim_time - prev->m_sim_time;
+            float real_speed = (time_delta > 0.f) ? (real_delta / time_delta) : 0.f;
+
+            // Completely stationary but walk resolver firing —
+            // check if move layer (6) is actually cycling.
+            // Legitimate walking always advances the cycle.
+            // Fakewalk exploits set weight without cycling.
+            if (real_speed < 5.f) {
+                const auto& move_curr = record->m_layers[6];
+                const auto& move_prev = prev->m_layers[6];
+
+                bool cycle_advancing = move_curr.m_cycle > move_prev.m_cycle
+                    || (move_prev.m_cycle > 0.9f && move_curr.m_cycle < 0.1f); // wraparound
+
+                // Layer has weight suggesting walk but cycle isn't moving —
+                // this is the exploit. Force stand.
+                if (move_curr.m_weight > 0.1f && !cycle_advancing)
+                    speed = 0.f;
+
+                // Real speed is basically zero regardless of what anim says.
+                if (real_speed < 1.f)
+                    speed = 0.f;
+            }
+        }
+    }
 
     if (!(record->m_flags & FL_ONGROUND))
         record->m_mode = Modes::RESOLVE_AIR;
@@ -432,7 +462,7 @@ void Resolver::ResolveAngles(Player* player, LagRecord* record) {
     AimPlayer* data = &g_aimbot.m_players[player->index() - 1];
 
     MatchShot(data, record);
-    SetMode(record);
+    SetMode(record, data);
 
     if (g_menu.main.config.mode.get() == 1)
         record->m_eye_angles.x = 90.f;
@@ -530,30 +560,37 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
     float       final_yaw = lastmove_body; // default = lastmove reference
 
     // =========================================================
-    // STEP 1: FORCE BRUTE AFTER REPEATED MISSES (anti-repeat)
-    // =========================================================
-    int misses =
+// STEP 1: FORCE CYCLE AFTER REPEATED MISSES (STANDING)
+// Hard-cycle through all possible angles after 2 misses
+// regardless of score — the scorer is clearly wrong.
+// Also resist tiny-movement resets by requiring a real
+// origin delta before clearing brute state.
+// =========================================================
+    int total_misses =
         data->m_resolve_history.miss_side +
         data->m_resolve_history.miss_invert +
+        data->m_resolve_history.miss_center +
         data->m_resolve_history.miss_bruteforce;
 
-    if (misses >= 2) {
-        // Walk the desync range in steps until we find an untried angle
-        float options[] = {
+    if (total_misses >= 2) {
+        float cycle_angles[] = {
             lastmove_body + 58.f,
             lastmove_body - 58.f,
             lastmove_body + 180.f,
             lastmove_body + 90.f,
             lastmove_body - 90.f,
+            lastmove_body + 135.f,
+            lastmove_body - 135.f,
         };
 
-        for (float yaw : options) {
-            yaw = math::NormalizedAngle(yaw);
-            if (!IsAngleRepeated(data, yaw)) {
-                record->m_eye_angles.y = yaw;
-                return;
-            }
-        }
+        int num_angles = sizeof(cycle_angles) / sizeof(cycle_angles[0]);
+
+        // Use miss count as cycle index so it advances every miss.
+        int idx = total_misses % num_angles;
+        float yaw = math::NormalizedAngle(cycle_angles[idx]);
+
+        record->m_eye_angles.y = yaw;
+        return;
     }
 
     // =========================================================
@@ -832,13 +869,26 @@ void Resolver::OnMiss(AimPlayer* data) {
 void Resolver::OnHit(AimPlayer* data) {
     data->m_resolve_history.last_hit_angle = data->m_resolve_history.last_angle;
 
-    data->m_resolve_history.miss_bruteforce = 0;
-    data->m_resolve_history.miss_side = 0;
-    data->m_resolve_history.miss_invert = 0;
-    data->m_resolve_history.miss_center = 0;
-    data->m_resolve_history.brute_index = 0;
+    // Only clear brute state if they genuinely moved —
+    // tiny movement exploits reset the index to make us dump.
+    bool real_movement = false;
+    if (data->m_records.size() >= 2) {
+        LagRecord* a = data->m_records[0].get();
+        LagRecord* b = data->m_records[1].get();
+        if (a && b)
+            real_movement = (a->m_origin - b->m_origin).length() > 32.f;
+    }
 
-    data->m_tried_angles.clear();
+    if (real_movement) {
+        data->m_resolve_history.miss_bruteforce = 0;
+        data->m_resolve_history.miss_side = 0;
+        data->m_resolve_history.miss_invert = 0;
+        data->m_resolve_history.miss_center = 0;
+        data->m_resolve_history.brute_index = 0;
+        data->m_tried_angles.clear();
+    }
+    // If no real movement, preserve miss counts — don't let them
+    // reset our brute progress by jiggling in place.
 
     float yaw = data->m_resolve_history.last_angle;
     auto* stat = GetAngleStat(data, yaw);

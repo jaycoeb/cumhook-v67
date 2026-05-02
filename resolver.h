@@ -26,7 +26,7 @@ public:
 	float GetAwayAngle( LagRecord* record );
 
 	void MatchShot( AimPlayer* data, LagRecord* record );
-	void SetMode( LagRecord* record );
+	void SetMode(LagRecord* record, AimPlayer* data);
 
 	void ResolveAngles( Player* player, LagRecord* record );
 	void ResolveWalk( AimPlayer* data, LagRecord* record );
