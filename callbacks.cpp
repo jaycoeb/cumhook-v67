@@ -109,6 +109,7 @@ bool callbacks::IsAITrashTalkerOn() {
 	return g_menu.main.misc.ai_trash_talker.get();
 }
 
+
 bool callbacks::IsBaimHealth( ) {
 	return g_menu.main.aimbot.baim2.get( 1 );
 }

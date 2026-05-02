@@ -2132,6 +2132,7 @@ public:
 	Checkbox killsay;
 	Checkbox quit_on_hurt;
 	Checkbox ai_trash_talker;
+	Edit ai_trash_prompt;
 
 public:
 	void init() {
@@ -2244,6 +2245,9 @@ public:
 
 		ai_trash_talker.setup(XOR("ai trash talker"), XOR("ai_trash_talker"));
 		RegisterElement(&ai_trash_talker, 1);
+
+		ai_trash_prompt.setup(XOR("ai trash prompt"), XOR("ai_trash_prompt"), 256);
+		RegisterElement(&ai_trash_prompt, 1);
 	}
 };
 
