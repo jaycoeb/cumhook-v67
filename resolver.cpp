@@ -1,11 +1,17 @@
 #include "includes.h"
 #include <numeric>
 
+// ============================================================
+// LASTMOVE RESOLVER
+// 2018 HvH resolves desync relative to the last walk record.
+// The engine clamps fake yaw within ±58° of the lastmove body.
+// We backtrack to that record and brute the desync range from it.
+// ============================================================
+
 static bool IsAngleRepeated(AimPlayer* data, float yaw) {
     for (float tried : data->m_tried_angles) {
         float diff = fabsf(math::NormalizedAngle(yaw - tried));
-
-        if (diff < 15.f) // tolerance
+        if (diff < 15.f)
             return true;
     }
     return false;
@@ -31,50 +37,46 @@ static AimPlayer::AngleStat* GetAngleStat(AimPlayer* data, float yaw) {
     return &data->m_angle_stats.back();
 }
 
-static float GetAdaptiveScore(AimPlayer* data, float yaw) {
-    auto* stat = GetAngleStat(data, yaw);
-    if (!stat)
-        return 0.f;
+// ============================================================
+// LASTMOVE HELPERS
+// ============================================================
 
-    float score = 0.f;
+// Returns the most recent record where the player was actually walking.
+// This is the reference yaw the engine locks desync against in 2018.
+static LagRecord* FindLastMoveRecord(AimPlayer* data) {
+    for (const auto& rec : data->m_records) {
+        if (!rec || rec->dormant() || !rec->valid())
+            continue;
 
-    // reward hits
-    score += stat->hits * 50.f;
+        if (rec->m_mode == Resolver::Modes::RESOLVE_WALK)
+            return rec.get();
 
-    // punish misses
-    score -= stat->misses * 60.f;
-
-    return score;
+        // also accept any record with meaningful velocity even if mode isn't set yet
+        if (rec->m_anim_velocity.length() > 20.f)
+            return rec.get();
+    }
+    return nullptr;
 }
 
-static float pred_foot_yaw(const LagRecord& a, const LagRecord& b, float predicted_offset) {
-    constexpr float foot_speed = 80.0f;
-
-    const float old_yaw = a.m_body;
-    const float new_yaw = b.m_body;
-    const float dt = b.m_anim_time - a.m_anim_time;
-
-    if (dt <= 0.0f)
-        return old_yaw;
-
-    const float max_delta = foot_speed * dt;
-    const float body_delta = math::NormalizedAngle(new_yaw - old_yaw);
-    const float abs_foot_delta = math::NormalizedAngle(b.m_abs_ang.y - a.m_abs_ang.y);
-
-    const float blended_delta = (body_delta * 0.5f) + (abs_foot_delta * 0.5f);
-    const float abs_blended = fabsf(blended_delta);
-
-    float resolved;
-    if (abs_blended <= max_delta) {
-        resolved = old_yaw + blended_delta;
-    }
-    else {
-        resolved = old_yaw + copysignf(max_delta, blended_delta);
-        resolved = math::NormalizedAngle(resolved + predicted_offset);
-    }
-
-    return math::NormalizedAngle(resolved);
+// Returns the body yaw from the lastmove record, or current body as fallback.
+static float GetLastMoveBody(AimPlayer* data, LagRecord* current) {
+    LagRecord* lm = FindLastMoveRecord(data);
+    if (lm)
+        return lm->m_body;
+    return current->m_body;
 }
+
+// How long ago (in seconds) the player last moved.
+static float GetTimeSinceLastMove(AimPlayer* data, LagRecord* current) {
+    LagRecord* lm = FindLastMoveRecord(data);
+    if (!lm)
+        return 9999.f;
+    return current->m_anim_time - lm->m_anim_time;
+}
+
+// ============================================================
+// FOOT DELTA — now relative to lastmove body
+// ============================================================
 
 static float pred_foot_delta(const std::deque<std::shared_ptr<LagRecord>>& records) {
     constexpr float MAX_DELTA_THRESHOLD = 35.0f;
@@ -95,17 +97,42 @@ static float pred_foot_delta(const std::deque<std::shared_ptr<LagRecord>>& recor
     }
 
     if (fabsf(max_abs_delta) > MAX_DELTA_THRESHOLD) {
-        // dynamic scale instead of fixed 60
         float scaled = fabsf(max_abs_delta) * 2.0f;
-
-        // manual clamp (no std::clamp needed)
-        if (scaled < 30.f) scaled = 30.f;
+        if (scaled < 30.f)  scaled = 30.f;
         if (scaled > 180.f) scaled = 180.f;
-
         return -sign * scaled;
     }
 
     return 0.0f;
+}
+
+// pred_foot_yaw — offset applied on top of lastmove body, not current body.
+static float pred_foot_yaw_from_lastmove(float lastmove_body,
+    const LagRecord& a,
+    const LagRecord& b,
+    float predicted_offset) {
+    constexpr float foot_speed = 80.0f;
+
+    const float dt = b.m_anim_time - a.m_anim_time;
+    if (dt <= 0.0f)
+        return lastmove_body;
+
+    const float max_delta = foot_speed * dt;
+    const float body_delta = math::NormalizedAngle(b.m_body - a.m_body);
+    const float abs_foot_delta = math::NormalizedAngle(b.m_abs_ang.y - a.m_abs_ang.y);
+    const float blended_delta = (body_delta * 0.5f) + (abs_foot_delta * 0.5f);
+    const float abs_blended = fabsf(blended_delta);
+
+    float resolved;
+    if (abs_blended <= max_delta) {
+        resolved = lastmove_body + blended_delta;
+    }
+    else {
+        resolved = lastmove_body + copysignf(max_delta, blended_delta);
+        resolved = math::NormalizedAngle(resolved + predicted_offset);
+    }
+
+    return math::NormalizedAngle(resolved);
 }
 
 static float curvature_heuristic(const std::deque<std::shared_ptr<LagRecord>>& records) {
@@ -114,117 +141,89 @@ static float curvature_heuristic(const std::deque<std::shared_ptr<LagRecord>>& r
 
     float total = 0.f;
     float prev_vel = 0.f;
-    bool has_prev = false;
-
-    // iterate recent records (keep it tight, last ~4–6)
-    int count = std::min((int)records.size(), 6);
+    bool  has_prev = false;
+    int   count = std::min((int)records.size(), 6);
 
     for (int i = 1; i < count; ++i) {
         const auto& curr = records[i];
         const auto& prev = records[i - 1];
 
         float dt = curr->m_anim_time - prev->m_anim_time;
-        if (dt <= 0.f)
-            continue;
+        if (dt <= 0.f) continue;
 
-        // yaw delta per second (angular velocity)
         float dyaw = math::NormalizedAngle(curr->m_body - prev->m_body);
         float vel = dyaw / dt;
 
-        if (has_prev) {
-            // acceleration (change in angular velocity)
+        if (has_prev)
             total += (vel - prev_vel);
-        }
 
         prev_vel = vel;
         has_prev = true;
     }
 
-    // average it slightly so it’s not noisy
     return total / (float)(count - 1);
 }
 
-static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
+// ============================================================
+// SCORE YAW — now computes delta relative to lastmove body
+// ============================================================
+
+static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw, float lastmove_body) {
     float score = 0.f;
 
-    float body = record->m_body;
+    // --------------------------------------------------
+    // 1. Proximity to lastmove body (engine desync reference)
+    // --------------------------------------------------
+    float lm_delta = fabsf(math::NormalizedAngle(yaw - lastmove_body));
+    score += (180.f - lm_delta) * 0.7f;   // weighted heavier than before
 
     // --------------------------------------------------
-    // 1. LBY proximity (core for 2018)
-    // --------------------------------------------------
-    float lby_delta = fabsf(math::NormalizedAngle(yaw - body));
-    score += (180.f - lby_delta) * 0.6f;
-
-    // --------------------------------------------------
-    // 2. movement direction
+    // 2. Movement direction
     // --------------------------------------------------
     if (record->m_velocity.length_2d() > 20.f) {
         float move_dir = math::rad_to_deg(std::atan2(
             record->m_velocity.y,
             record->m_velocity.x
         ));
-
         float move_delta = fabsf(math::NormalizedAngle(yaw - move_dir));
         score += (180.f - move_delta) * 0.4f;
     }
 
     // --------------------------------------------------
-    // 3. previous resolved stability
+    // 3. Previous resolved stability
     // --------------------------------------------------
     if (!data->m_records.empty()) {
         float prev = data->m_resolve_history.last_angle;
         float delta = fabsf(math::NormalizedAngle(yaw - prev));
-
         score += (180.f - delta) * 0.25f;
     }
 
-    // --------------------------------------------------
-    // 4. trusted LBY boost
-    // --------------------------------------------------
-    if (data->m_trusted_lby_time > 0.f) {
-        float dt = record->m_anim_time - data->m_trusted_lby_time;
-
-        if (dt < 1.1f) {
-            float delta = fabsf(math::NormalizedAngle(yaw - data->m_trusted_lby));
-            score += (180.f - delta) * 2.0f;
-        }
-    }
-
-    float delta = math::NormalizedAngle(yaw - body);
+    float delta = math::NormalizedAngle(yaw - lastmove_body);
 
     // ==================================================
-    // 🔥 MISS ADAPTATION (FIXED)
+    // MISS ADAPTATION (classified against lastmove body)
     // ==================================================
 
-    // CENTER penalty (THIS FIXES YOUR MAIN ISSUE)
     if (fabsf(delta) < 20.f) {
         if (data->m_resolve_history.miss_center >= 1)
-            return -FLT_MAX; // HARD DENY CENTER
+            return -FLT_MAX; // hard deny center
     }
 
-    // RIGHT failed → punish right, boost left
     if (data->m_resolve_history.miss_side > 0) {
-        if (delta > 0.f)
-            score -= 90.f;
-        else
-            score += 25.f;
+        if (delta > 0.f) score -= 90.f;
+        else             score += 25.f;
     }
 
-    // LEFT failed → punish left, boost right
     if (data->m_resolve_history.miss_invert > 0) {
-        if (delta < 0.f)
-            score -= 90.f;
-        else
-            score += 25.f;
+        if (delta < 0.f) score -= 90.f;
+        else             score += 25.f;
     }
 
-    // OPPOSITE failed → punish 180
     if (data->m_resolve_history.miss_bruteforce > 0) {
         if (fabsf(delta) > 140.f)
             score -= 90.f;
     }
 
-    // force opposite after many misses
     int total_misses =
         data->m_resolve_history.miss_side +
         data->m_resolve_history.miss_invert +
@@ -237,48 +236,47 @@ static float ScoreYaw(AimPlayer* data, LagRecord* record, float yaw) {
     }
 
     // ==================================================
-    // 🔥 HARD ANTI-REPEAT (VERY IMPORTANT)
+    // HARD ANTI-REPEAT
     // ==================================================
 
     float last = data->m_resolve_history.last_angle;
     float diff = fabsf(math::NormalizedAngle(yaw - last));
-
-    if (diff < 10.f) {
-        score -= 1000.f; // NEVER repeat
-    }
+    if (diff < 10.f)
+        score -= 1000.f;
 
     for (auto& tried : data->m_tried_angles) {
-        float diff = fabsf(math::NormalizedAngle(yaw - tried));
-        if (diff < 10.f) {
+        float d = fabsf(math::NormalizedAngle(yaw - tried));
+        if (d < 10.f)
             score -= 500.f;
-        }
     }
 
     return score;
 }
 
+// ============================================================
+// SELECT BEST YAW — candidates built around lastmove body
+// ============================================================
 
 static float SelectBestYaw(AimPlayer* data, LagRecord* record) {
-    std::vector<Resolver::ResolveCandidate> candidates;
-
-    float body = record->m_body;
+    float lastmove_body = GetLastMoveBody(data, record);
     float away = g_resolver.GetAwayAngle(record);
 
-    // --------------------------------------------------
-    // core angles (2018 meta)
-    // --------------------------------------------------
-    candidates.push_back({ body, 0.f });
-    candidates.push_back({ body + 180.f, 0.f });
-    candidates.push_back({ body + 90.f, 0.f });
-    candidates.push_back({ body - 90.f, 0.f });
+    std::vector<Resolver::ResolveCandidate> candidates;
 
+    // Core desync angles relative to lastmove body (+58 = max engine desync)
+    candidates.push_back({ lastmove_body,         0.f });
+    candidates.push_back({ lastmove_body + 58.f,  0.f });
+    candidates.push_back({ lastmove_body - 58.f,  0.f });
+    candidates.push_back({ lastmove_body + 180.f, 0.f });
+    candidates.push_back({ lastmove_body + 90.f,  0.f });
+    candidates.push_back({ lastmove_body - 90.f,  0.f });
+
+    // Away-based supplements
     candidates.push_back({ away + 180.f, 0.f });
-    candidates.push_back({ away + 90.f, 0.f });
-    candidates.push_back({ away - 90.f, 0.f });
+    candidates.push_back({ away + 90.f,  0.f });
+    candidates.push_back({ away - 90.f,  0.f });
 
-    // --------------------------------------------------
-    // foot prediction (if available)
-    // --------------------------------------------------
+    // Foot prediction from lastmove body
     if (data->m_records.size() >= 2) {
         const auto& a = *data->m_records[data->m_records.size() - 2];
         const auto& b = *data->m_records[data->m_records.size() - 1];
@@ -286,27 +284,22 @@ static float SelectBestYaw(AimPlayer* data, LagRecord* record) {
         float offset = pred_foot_delta(data->m_records);
         float scaled = std::clamp(offset * 3.f, -180.f, 180.f);
 
-        float foot = pred_foot_yaw(a, b, scaled);
+        float foot = pred_foot_yaw_from_lastmove(lastmove_body, a, b, scaled);
         candidates.push_back({ foot, 0.f });
     }
 
-    // --------------------------------------------------
-    // curvature
-    // --------------------------------------------------
+    // Curvature hint (minor)
     if (data->m_records.size() >= 4) {
         float curv = curvature_heuristic(data->m_records);
-        candidates.push_back({ body + curv, 0.f });
+        candidates.push_back({ lastmove_body + curv, 0.f });
     }
 
-    // --------------------------------------------------
-    // score all
-    // --------------------------------------------------
     float best_score = -FLT_MAX;
-    float best_yaw = body;
+    float best_yaw = lastmove_body;
 
     for (auto& c : candidates) {
         c.yaw = math::NormalizedAngle(c.yaw);
-        c.score = ScoreYaw(data, record, c.yaw);
+        c.score = ScoreYaw(data, record, c.yaw, lastmove_body);
 
         if (c.score > best_score) {
             best_score = c.score;
@@ -317,6 +310,10 @@ static float SelectBestYaw(AimPlayer* data, LagRecord* record) {
     return best_yaw;
 }
 
+// ============================================================
+// LBY SPAM DETECTION (kept for shot matching, not resolving)
+// ============================================================
+
 static bool lby_spam(const LagRecord& curr, const LagRecord& prev) {
     const auto& layer0_curr = curr.m_layers[0];
     const auto& layer0_prev = prev.m_layers[0];
@@ -325,235 +322,199 @@ static bool lby_spam(const LagRecord& curr, const LagRecord& prev) {
         layer0_curr.m_sequence == layer0_prev.m_sequence &&
         layer0_curr.m_cycle < layer0_prev.m_cycle &&
         fabsf(layer0_curr.m_playback_rate - layer0_prev.m_playback_rate) > 0.02f
-    );
+        );
 }
 
-Resolver g_resolver{};;
+Resolver g_resolver{};
 
-LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
-    LagRecord *first_valid, *current;
+// ============================================================
+// RECORD FINDERS
+// ============================================================
 
-	if( data->m_records.empty( ) )
-		return nullptr;
+LagRecord* Resolver::FindIdealRecord(AimPlayer* data) {
+    LagRecord* first_valid = nullptr;
 
-    first_valid = nullptr;
+    if (data->m_records.empty())
+        return nullptr;
 
-    // iterate records.
-	for( const auto &it : data->m_records ) {
-		if( it->dormant( ) || it->immune( ) || !it->valid( ) )
-			continue;
+    for (const auto& it : data->m_records) {
+        if (it->dormant() || it->immune() || !it->valid())
+            continue;
 
-        // get current record.
-        current = it.get( );
+        LagRecord* current = it.get();
 
-        // first record that was valid, store it for later.
-        if( !first_valid )
+        if (!first_valid)
             first_valid = current;
 
-        // try to find a record with a shot, lby update, walking or no anti-aim.
-		if( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
+        if (it->m_shot || it->m_mode == Modes::RESOLVE_BODY ||
+            it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE)
             return current;
-	}
+    }
 
-	// none found above, return the first valid record if possible.
-	return ( first_valid ) ? first_valid : nullptr;
+    return first_valid ? first_valid : nullptr;
 }
 
-LagRecord* Resolver::FindLastRecord( AimPlayer* data ) {
-    LagRecord* current;
+LagRecord* Resolver::FindLastRecord(AimPlayer* data) {
+    if (data->m_records.empty())
+        return nullptr;
 
-	if( data->m_records.empty( ) )
-		return nullptr;
+    for (auto it = data->m_records.crbegin(); it != data->m_records.crend(); ++it) {
+        LagRecord* current = it->get();
+        if (current->valid() && !current->immune() && !current->dormant())
+            return current;
+    }
 
-	// iterate records in reverse.
-	for( auto it = data->m_records.crbegin( ); it != data->m_records.crend( ); ++it ) {
-		current = it->get( );
-
-		// if this record is valid.
-		// we are done since we iterated in reverse.
-		if( current->valid( ) && !current->immune( ) && !current->dormant( ) )
-			return current;
-	}
-
-	return nullptr;
+    return nullptr;
 }
 
 LagRecord* Resolver::FindPreviousRecord(AimPlayer* data) {
     if (data->m_records.size() < 2)
         return nullptr;
-
     return data->m_records[1].get();
 }
 
-void Resolver::OnBodyUpdate( Player* player, float value ) {
-	AimPlayer* data = &g_aimbot.m_players[ player->index( ) - 1 ];
+// ============================================================
+// BODY / AIM EVENTS
+// ============================================================
 
-	// set data.
-	data->m_old_body = data->m_body;
-	data->m_body     = value;
+void Resolver::OnBodyUpdate(Player* player, float value) {
+    AimPlayer* data = &g_aimbot.m_players[player->index() - 1];
+    data->m_old_body = data->m_body;
+    data->m_body = value;
 }
 
-float Resolver::GetAwayAngle( LagRecord* record ) {
-	if (!record)
-		return 0.0f;
+float Resolver::GetAwayAngle(LagRecord* record) {
+    if (!record)
+        return 0.0f;
 
-	ang_t away;
-	math::VectorAngles( g_cl.m_local->m_vecOrigin( ) - record->m_pred_origin, away );
-	return away.y;
+    ang_t away;
+    math::VectorAngles(g_cl.m_local->m_vecOrigin() - record->m_pred_origin, away);
+    return away.y;
 }
 
-void Resolver::MatchShot( AimPlayer* data, LagRecord* record ) {
-	// do not attempt to do this in nospread mode.
-	if( g_menu.main.config.mode.get( ) == 1 )
-		return;
+void Resolver::MatchShot(AimPlayer* data, LagRecord* record) {
+    if (g_menu.main.config.mode.get() == 1)
+        return;
 
-	float shoot_time = -1.f;
+    float shoot_time = -1.f;
 
-	Weapon* weapon = data->m_player->GetActiveWeapon( );
-	if( weapon ) {
-		// with logging this time was always one tick behind.
-		// so add one tick to the last shoot time.
-		shoot_time = weapon->m_fLastShotTime( ) + g_csgo.m_globals->m_interval;
-	}
+    Weapon* weapon = data->m_player->GetActiveWeapon();
+    if (weapon)
+        shoot_time = weapon->m_fLastShotTime() + g_csgo.m_globals->m_interval;
 
-	// this record has a shot on it.
-	if( game::TIME_TO_TICKS( shoot_time ) == game::TIME_TO_TICKS( record->m_sim_time ) ) {
-		if( record->m_lag <= 2 )
-			record->m_shot = true;
-		
-		// more then 1 choke, cant hit pitch, apply prev pitch.
-		else if( data->m_records.size( ) >= 2 ) {
-			LagRecord* previous = data->m_records[ 1 ].get( );
-
-			if( previous && !previous->dormant( ) )
-				record->m_eye_angles.x = previous->m_eye_angles.x;
-		}
-	}
+    if (game::TIME_TO_TICKS(shoot_time) == game::TIME_TO_TICKS(record->m_sim_time)) {
+        if (record->m_lag <= 2)
+            record->m_shot = true;
+        else if (data->m_records.size() >= 2) {
+            LagRecord* previous = data->m_records[1].get();
+            if (previous && !previous->dormant())
+                record->m_eye_angles.x = previous->m_eye_angles.x;
+        }
+    }
 }
 
-void Resolver::SetMode( LagRecord* record ) {
-	// the resolver has 3 modes to chose from.
-	// these modes will vary more under the hood depending on what data we have about the player
-	// and what kind of hack vs. hack we are playing (mm/nospread).
+void Resolver::SetMode(LagRecord* record) {
+    float speed = record->m_anim_velocity.length();
 
-	float speed = record->m_anim_velocity.length( );
-
-	// if on ground, moving, and not fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && speed > 0.15f && !record->m_fake_walk )
-		record->m_mode = Modes::RESOLVE_WALK;
-
-	// if on ground, not moving or fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && ( speed <= 0.15f || record->m_fake_walk ) )
-		record->m_mode = Modes::RESOLVE_STAND;
-
-	// if not on ground.
-	else if( !( record->m_flags & FL_ONGROUND ) )
-		record->m_mode = Modes::RESOLVE_AIR;
+    if (!(record->m_flags & FL_ONGROUND))
+        record->m_mode = Modes::RESOLVE_AIR;
+    else if (speed > 0.15f && !record->m_fake_walk)
+        record->m_mode = Modes::RESOLVE_WALK;
+    else
+        record->m_mode = Modes::RESOLVE_STAND;
 }
 
-void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
-	AimPlayer* data = &g_aimbot.m_players[ player->index( ) - 1 ];
+// ============================================================
+// RESOLVE ANGLES — top-level dispatch
+// ============================================================
 
-	// mark this record if it contains a shot.
-	MatchShot( data, record );
+void Resolver::ResolveAngles(Player* player, LagRecord* record) {
+    AimPlayer* data = &g_aimbot.m_players[player->index() - 1];
 
-	// next up mark this record with a resolver mode that will be used.
-	SetMode( record );
+    MatchShot(data, record);
+    SetMode(record);
 
-	// if we are in nospread mode, force all players pitches to down.
-	// TODO; we should check thei actual pitch and up too, since those are the other 2 possible angles.
-	// this should be somehow combined into some iteration that matches with the air angle iteration.
-	if( g_menu.main.config.mode.get( ) == 1 )
-		record->m_eye_angles.x = 90.f;
+    if (g_menu.main.config.mode.get() == 1)
+        record->m_eye_angles.x = 90.f;
 
-	// if random resolver is enabled, just randomize the yaw and be done with it
-	if (g_menu.main.aimbot.random_resolver.get()){
-		record->m_eye_angles.y = rand() % 360;
+    if (g_menu.main.aimbot.random_resolver.get()) {
+        record->m_eye_angles.y = rand() % 360;
     }
     else {
         record->m_eye_angles.y = SelectBestYaw(data, record);
-        // we arrived here we can do the acutal resolve.
+
         if (record->m_mode == Modes::RESOLVE_WALK)
             ResolveWalk(data, record);
-
         else if (record->m_mode == Modes::RESOLVE_STAND)
             ResolveStand(data, record, player->m_PlayerAnimState());
-
         else if (record->m_mode == Modes::RESOLVE_AIR)
             ResolveAir(data, record);
     }
-	// normalize the eye angles, doesn't really matter but its clean.
-	math::NormalizeAngle( record->m_eye_angles.y );
 
+    math::NormalizeAngle(record->m_eye_angles.y);
     data->m_resolve_history.last_angle = record->m_eye_angles.y;
 }
+
+// ============================================================
+// CALCULATE STAND — uses lastmove body as desync reference
+// ============================================================
 
 float Resolver::CalculateStand(AimPlayer* data, LagRecord* record, LagRecord* prev, CCSGOPlayerAnimState* state) {
     if (!data || !record || !prev)
         return record ? record->m_body : 0.f;
 
     float confidence = ComputeConfidence(data);
+    float lastmove_body = GetLastMoveBody(data, record);
+    float time_since_lm = GetTimeSinceLastMove(data, record);
 
-    // 🔒 LOW CONFIDENCE → NEVER PREDICT
-    if (confidence < 0.4f) {
-        return math::NormalizedAngle(record->m_body + 180.f);
-    }
+    // if the player stopped very recently, trust lastmove body directly
+    if (time_since_lm < 0.3f)
+        return lastmove_body;
 
-    // ✅ TRUST LBY SNAP FIRST
-    const auto& adjust = record->m_layers[3];
-    const auto& prev_adjust = prev->m_layers[3];
+    // low confidence — flip lastmove by 180
+    if (confidence < 0.4f)
+        return math::NormalizedAngle(lastmove_body + 180.f);
 
-    if ((adjust.m_sequence == 979 || adjust.m_sequence == 978)) {
-        bool reset = prev_adjust.m_cycle > 0.8f && adjust.m_cycle < 0.2f;
-        bool spike = (adjust.m_weight - prev_adjust.m_weight > 0.45f) && adjust.m_weight > 0.9f;
-
-        if (reset && spike)
-            return record->m_body;
-    }
-
-    // 🔒 ONLY USE FOOT DELTA IF STABLE
+    // foot prediction anchored to lastmove
     if (confidence > 0.6f && data->m_records.size() >= 3) {
         float offset = pred_foot_delta(data->m_records);
-
         if (fabsf(offset) > 1.0f)
-            return math::NormalizedAngle(record->m_body + offset);
+            return math::NormalizedAngle(lastmove_body + offset);
     }
 
-    // 🔒 REMOVE CURVATURE (too unstable)
-    // (yes, completely remove it)
-
-    // 🔒 CLAMP USING DESYNC LIMIT
+    // clamp using max desync delta from animstate
     if (state) {
         float max_desync = state->m_fl_aim_yaw_max;
-        float delta = math::NormalizedAngle(record->m_body - prev->m_body);
+        float delta = math::NormalizedAngle(record->m_body - lastmove_body);
 
-        if (fabsf(delta) > max_desync - 1.f) {
-            return math::NormalizedAngle(record->m_body + (delta > 0 ? max_desync : -max_desync));
-        }
+        if (fabsf(delta) > max_desync - 1.f)
+            return math::NormalizedAngle(lastmove_body + (delta > 0 ? max_desync : -max_desync));
     }
 
-    // fallback = safest
-    return math::NormalizedAngle(record->m_body + 180.f);
+    return math::NormalizedAngle(lastmove_body + 180.f);
 }
 
-void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
-	// apply lby to eyeangles.
-	record->m_eye_angles.y = record->m_body;
+// ============================================================
+// RESOLVE WALK
+// ============================================================
 
-	// delay body update.
-	data->m_body_update = record->m_anim_time + 0.22f;
+void Resolver::ResolveWalk(AimPlayer* data, LagRecord* record) {
+    // Walking: eye yaw = body yaw, no desync active.
+    record->m_eye_angles.y = record->m_body;
 
-	// reset stand and body index.
-	data->m_stand_index  = 0;
-	data->m_stand_index2 = 0;
-	data->m_body_index   = 0;
+    data->m_body_update = record->m_anim_time + 0.22f;
+    data->m_stand_index = 0;
+    data->m_stand_index2 = 0;
+    data->m_body_index = 0;
 
-	// copy the last record that this player was walking
-	// we need it later on because it gives us crucial data.
-	std::memcpy( &data->m_walk_record, record, sizeof( LagRecord ) );
+    // Store as the authoritative lastmove record.
+    std::memcpy(&data->m_walk_record, record, sizeof(LagRecord));
 }
 
-//chatgpt FINAL FORM $$$
+// ============================================================
+// RESOLVE STAND — backtracks to lastmove, bruteforces desync
+// ============================================================
+
 void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimState* state) {
     if (!data || !record)
         return;
@@ -564,55 +525,30 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
     }
 
     LagRecord* prev = FindPreviousRecord(data);
-    float away = GetAwayAngle(record);
-
-    float final_yaw = record->m_body; // default fallback
-
-    // =========================================================
-    // STEP 1: HARD LBY SNAP (ONLY TRUE HARD OVERRIDE)
-    // =========================================================
-    if (prev) {
-        float delta = fabsf(math::NormalizedAngle(record->m_body - prev->m_body));
-
-        if (delta > 35.f) {
-            data->m_trusted_lby = record->m_body;
-            data->m_trusted_lby_time = record->m_anim_time;
-
-            if (data->m_resolve_history.miss_bruteforce > 1) {
-                float body = record->m_body;
-
-                switch ((data->m_resolve_history.miss_bruteforce) % 3) {
-                case 0: record->m_eye_angles.y = body + 180.f; break;
-                case 1: record->m_eye_angles.y = body + 90.f;  break;
-                case 2: record->m_eye_angles.y = body - 90.f;  break;
-                }
-
-                return;
-            }
-
-            record->m_eye_angles.y = record->m_body;
-            return; // ONLY hard return allowed
-        }
-    }
+    float       away = GetAwayAngle(record);
+    float       lastmove_body = GetLastMoveBody(data, record);
+    float       final_yaw = lastmove_body; // default = lastmove reference
 
     // =========================================================
-// STEP 2: FORCE BRUTE AFTER MISSES (ANTI-REPEAT FIX)
-// =========================================================
+    // STEP 1: FORCE BRUTE AFTER REPEATED MISSES (anti-repeat)
+    // =========================================================
     int misses =
         data->m_resolve_history.miss_side +
         data->m_resolve_history.miss_invert +
         data->m_resolve_history.miss_bruteforce;
 
     if (misses >= 2) {
+        // Walk the desync range in steps until we find an untried angle
         float options[] = {
-            record->m_body + 180.f,
-            record->m_body + 90.f,
-            record->m_body - 90.f
+            lastmove_body + 58.f,
+            lastmove_body - 58.f,
+            lastmove_body + 180.f,
+            lastmove_body + 90.f,
+            lastmove_body - 90.f,
         };
 
         for (float yaw : options) {
             yaw = math::NormalizedAngle(yaw);
-
             if (!IsAngleRepeated(data, yaw)) {
                 record->m_eye_angles.y = yaw;
                 return;
@@ -621,25 +557,27 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
     }
 
     // =========================================================
-    // STEP 2: BUILD CANDIDATE BASE
+    // STEP 2: BUILD CANDIDATE SET (lastmove-relative)
     // =========================================================
     std::vector<float> candidates;
 
-    float body = record->m_body;
-
+    // Desync range anchored to lastmove body
     if (data->m_resolve_history.miss_center < 1)
-        candidates.push_back(body);
+        candidates.push_back(lastmove_body);
 
-    candidates.push_back(body + 180.f);
-    candidates.push_back(body + 90.f);
-    candidates.push_back(body - 90.f);
+    candidates.push_back(lastmove_body + 58.f);
+    candidates.push_back(lastmove_body - 58.f);
+    candidates.push_back(lastmove_body + 180.f);
+    candidates.push_back(lastmove_body + 90.f);
+    candidates.push_back(lastmove_body - 90.f);
 
+    // Away-relative candidates
     candidates.push_back(away + 180.f);
     candidates.push_back(away + 90.f);
     candidates.push_back(away - 90.f);
 
     // =========================================================
-    // STEP 3: ADD FOOT PREDICTION (SAFE VERSION)
+    // STEP 3: FOOT PREDICTION (anchored to lastmove body)
     // =========================================================
     if (data->m_records.size() >= 2) {
         const auto& a = *data->m_records[data->m_records.size() - 2];
@@ -648,45 +586,29 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         float offset = pred_foot_delta(data->m_records);
         float scaled = std::clamp(offset * 2.5f, -180.f, 180.f);
 
-        float foot = pred_foot_yaw(a, b, scaled);
+        float foot = pred_foot_yaw_from_lastmove(lastmove_body, a, b, scaled);
         candidates.push_back(foot);
     }
 
     // =========================================================
-    // STEP 4: ADD TRUSTED LBY (if recent)
+    // STEP 4: MISS-BASED SUPPLEMENTS
     // =========================================================
-    if (data->m_trusted_lby_time > 0.f) {
-        float dt = record->m_anim_time - data->m_trusted_lby_time;
+    if (data->m_resolve_history.miss_side > 0)
+        candidates.push_back(lastmove_body - 58.f);
 
-        if (dt < 1.1f) {
-            candidates.push_back(data->m_trusted_lby);
-            candidates.push_back(data->m_trusted_lby + 180.f);
-        }
-    }
+    if (data->m_resolve_history.miss_invert > 0)
+        candidates.push_back(lastmove_body + 58.f);
 
-    // =========================================================
-    // STEP 5: MISS-BASED ADAPTATION (VERY IMPORTANT)
-    // =========================================================
-    if (data->m_resolve_history.miss_side > 0) {
-        candidates.push_back(body - 90.f);
-    }
-
-    if (data->m_resolve_history.miss_invert > 0) {
-        candidates.push_back(body + 90.f);
-    }
-
-    if (data->m_resolve_history.miss_bruteforce > 1) {
-        candidates.push_back(body + 180.f);
-    }
+    if (data->m_resolve_history.miss_bruteforce > 1)
+        candidates.push_back(lastmove_body + 180.f);
 
     // =========================================================
-// STEP 5.5: REMOVE DUPLICATE ANGLES (VERY IMPORTANT)
-// =========================================================
+    // STEP 5: DEDUPLICATE
+    // =========================================================
     for (auto& yaw : candidates)
         yaw = math::NormalizedAngle(yaw);
 
     std::sort(candidates.begin(), candidates.end());
-
     candidates.erase(
         std::unique(candidates.begin(), candidates.end(),
             [](float a, float b) {
@@ -695,20 +617,11 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         candidates.end()
     );
 
-    for (auto& yaw : candidates)
-        yaw = math::NormalizedAngle(yaw);
-
-    std::sort(candidates.begin(), candidates.end());
-    candidates.erase(std::unique(candidates.begin(), candidates.end(),
-        [](float a, float b) {
-            return fabsf(math::NormalizedAngle(a - b)) < 1.0f;
-        }),
-        candidates.end());
-
+    // Filter out directions we've confirmed don't work
     candidates.erase(
         std::remove_if(candidates.begin(), candidates.end(),
             [&](float yaw) {
-                float delta = math::NormalizedAngle(yaw - record->m_body);
+                float delta = math::NormalizedAngle(yaw - lastmove_body);
 
                 if (fabsf(delta) < 20.f && data->m_resolve_history.miss_center >= 2)
                     return true;
@@ -724,20 +637,15 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         candidates.end()
     );
 
+    // Miss weight helper (uses lastmove_body as reference)
     auto GetMissWeight = [&](float yaw) -> float {
-        float delta = math::NormalizedAngle(yaw - record->m_body);
-
+        float delta = math::NormalizedAngle(yaw - lastmove_body);
         float weight = 0.f;
 
-        // center
         if (fabsf(delta) < 20.f)
             weight -= data->m_resolve_history.miss_center * 50.f;
-
-        // right side
         else if (delta > 0.f)
             weight -= data->m_resolve_history.miss_side * 50.f;
-
-        // left side
         else
             weight -= data->m_resolve_history.miss_invert * 50.f;
 
@@ -745,16 +653,13 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
         };
 
     // =========================================================
-    // STEP 6: SCORE EVERYTHING
+    // STEP 6: SCORE AND SELECT
     // =========================================================
     float best_score = -FLT_MAX;
 
     for (float yaw : candidates) {
         float norm = math::NormalizedAngle(yaw);
-
-        float score = ScoreYaw(data, record, norm);
-
-        // 🔥 apply miss-based weight
+        float score = ScoreYaw(data, record, norm, lastmove_body);
         score += GetMissWeight(norm);
 
         if (score > best_score) {
@@ -767,148 +672,86 @@ void Resolver::ResolveStand(AimPlayer* data, LagRecord* record, CCSGOPlayerAnimS
     math::NormalizeAngle(record->m_eye_angles.y);
 }
 
-void Resolver::StandNS( AimPlayer* data, LagRecord* record ) {
-	// get away angles.
-	float away = GetAwayAngle( record );
+// ============================================================
+// STAND NS (nospread bruteforce)
+// ============================================================
 
-	switch( data->m_shots % 8 ) {
-	case 0:
-		record->m_eye_angles.y = away + 180.f;
-		break;
+void Resolver::StandNS(AimPlayer* data, LagRecord* record) {
+    float away = GetAwayAngle(record);
 
-	case 1:
-		record->m_eye_angles.y = away + 90.f;
-		break;
-	case 2:
-		record->m_eye_angles.y = away - 90.f;
-		break;
+    switch (data->m_shots % 8) {
+    case 0: record->m_eye_angles.y = away + 180.f; break;
+    case 1: record->m_eye_angles.y = away + 90.f;  break;
+    case 2: record->m_eye_angles.y = away - 90.f;  break;
+    case 3: record->m_eye_angles.y = away + 45.f;  break;
+    case 4: record->m_eye_angles.y = away - 45.f;  break;
+    case 5: record->m_eye_angles.y = away + 135.f; break;
+    case 6: record->m_eye_angles.y = away - 135.f; break;
+    case 7: record->m_eye_angles.y = away + 0.f;   break;
+    default: break;
+    }
 
-	case 3:
-		record->m_eye_angles.y = away + 45.f;
-		break;
-	case 4:
-		record->m_eye_angles.y = away - 45.f;
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away + 135.f;
-		break;
-	case 6:
-		record->m_eye_angles.y = away - 135.f;
-		break;
-
-	case 7:
-		record->m_eye_angles.y = away + 0.f;
-		break;
-
-	default:
-		break;
-	}
-
-	// force LBY to not fuck any pose and do a true bruteforce.
-	record->m_body = record->m_eye_angles.y;
+    record->m_body = record->m_eye_angles.y;
 }
 
-void Resolver::ResolveAir( AimPlayer* data, LagRecord* record ) {
-	// for no-spread call a seperate resolver.
-	if( g_menu.main.config.mode.get( ) == 1 ) {
-		AirNS( data, record );
-		return;
-	}
+// ============================================================
+// RESOLVE AIR
+// ============================================================
 
-	// else run our matchmaking air resolver.
+void Resolver::ResolveAir(AimPlayer* data, LagRecord* record) {
+    if (g_menu.main.config.mode.get() == 1) {
+        AirNS(data, record);
+        return;
+    }
 
-	// we have barely any speed. 
-	// either we jumped in place or we just left the ground.
-	// or someone is trying to fool our resolver.
-	if( record->m_velocity.length_2d( ) < 60.f ) {
-		// set this for completion.
-		// so the shot parsing wont pick the hits / misses up.
-		// and process them wrongly.
-		record->m_mode = Modes::RESOLVE_STAND;
+    if (record->m_velocity.length_2d() < 60.f) {
+        record->m_mode = Modes::RESOLVE_STAND;
+        ResolveStand(data, record, record->m_player->m_PlayerAnimState());
+        return;
+    }
 
-		// invoke our stand resolver.
-		ResolveStand( data, record, record->m_player->m_PlayerAnimState( ) );
+    float velyaw = math::rad_to_deg(std::atan2(record->m_velocity.y, record->m_velocity.x));
 
-		// we are done.
-		return;
-	}
-
-	// try to predict the direction of the player based on his velocity direction.
-	// this should be a rough estimation of where he is looking.
-	float velyaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
-
-	switch( data->m_shots % 3 ) {
-	case 0:
-		record->m_eye_angles.y = velyaw + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = velyaw - 90.f;
-		break;
-
-	case 2:
-		record->m_eye_angles.y = velyaw + 90.f;
-		break;
-	}
+    switch (data->m_shots % 3) {
+    case 0: record->m_eye_angles.y = velyaw + 180.f; break;
+    case 1: record->m_eye_angles.y = velyaw - 90.f;  break;
+    case 2: record->m_eye_angles.y = velyaw + 90.f;  break;
+    }
 }
 
-void Resolver::AirNS( AimPlayer* data, LagRecord* record ) {
-	// get away angles.
-	float away = GetAwayAngle( record );
+void Resolver::AirNS(AimPlayer* data, LagRecord* record) {
+    float away = GetAwayAngle(record);
 
-	switch( data->m_shots % 9 ) {
-	case 0:
-		record->m_eye_angles.y = away + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = away + 150.f;
-		break;
-	case 2:
-		record->m_eye_angles.y = away - 150.f;
-		break;
-
-	case 3:
-		record->m_eye_angles.y = away + 165.f;
-		break;
-	case 4:
-		record->m_eye_angles.y = away - 165.f;
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away + 135.f;
-		break;
-	case 6:
-		record->m_eye_angles.y = away - 135.f;
-		break;
-
-	case 7:
-		record->m_eye_angles.y = away + 90.f;
-		break;
-	case 8:
-		record->m_eye_angles.y = away - 90.f;
-		break;
-
-	default:
-		break;
-	}
+    switch (data->m_shots % 9) {
+    case 0: record->m_eye_angles.y = away + 180.f; break;
+    case 1: record->m_eye_angles.y = away + 150.f; break;
+    case 2: record->m_eye_angles.y = away - 150.f; break;
+    case 3: record->m_eye_angles.y = away + 165.f; break;
+    case 4: record->m_eye_angles.y = away - 165.f; break;
+    case 5: record->m_eye_angles.y = away + 135.f; break;
+    case 6: record->m_eye_angles.y = away - 135.f; break;
+    case 7: record->m_eye_angles.y = away + 90.f;  break;
+    case 8: record->m_eye_angles.y = away - 90.f;  break;
+    default: break;
+    }
 }
 
-void Resolver::ResolvePoses( Player* player, LagRecord* record ) {
-	AimPlayer* data = &g_aimbot.m_players[ player->index( ) - 1 ];
+// ============================================================
+// POSE RESOLVER
+// ============================================================
 
-	// only do this bs when in air.
-	if( record->m_mode == Modes::RESOLVE_AIR ) {
-		// ang = pose min + pose val x ( pose range )
+void Resolver::ResolvePoses(Player* player, LagRecord* record) {
+    AimPlayer* data = &g_aimbot.m_players[player->index() - 1];
 
-		// lean_yaw
-		player->m_flPoseParameter( )[ 2 ]  = g_csgo.RandomInt( 0, 4 ) * 0.25f;   
-
-		// body_yaw
-		player->m_flPoseParameter( )[ 11 ] = g_csgo.RandomInt( 1, 3 ) * 0.25f;
-	}
+    if (record->m_mode == Modes::RESOLVE_AIR) {
+        player->m_flPoseParameter()[2] = g_csgo.RandomInt(0, 4) * 0.25f;
+        player->m_flPoseParameter()[11] = g_csgo.RandomInt(1, 3) * 0.25f;
+    }
 }
+
+// ============================================================
+// CONFIDENCE
+// ============================================================
 
 float Resolver::ComputeConfidence(AimPlayer* data) {
     if (data->m_records.size() < 2)
@@ -922,7 +765,6 @@ float Resolver::ComputeConfidence(AimPlayer* data) {
 
     float jitter = fabsf(dt - ideal);
     float ratio = std::clamp(jitter / ideal, 0.f, 1.f);
-
     float confidence = 1.f - ratio;
 
     float dist = (a->m_origin - b->m_origin).length();
@@ -932,82 +774,63 @@ float Resolver::ComputeConfidence(AimPlayer* data) {
     return std::clamp(confidence, 0.1f, 1.f);
 }
 
+// ============================================================
+// ON MISS — classify delta relative to lastmove body
+// ============================================================
+
 void Resolver::OnMiss(AimPlayer* data) {
     float shot = data->m_resolve_history.last_angle;
-    float body = data->m_body;
+    float lastmove_body = GetLastMoveBody(data, FindLastRecord(data));
 
-    float delta = math::NormalizedAngle(shot - body);
-
-    // =====================================================
-    // 🔥 CORRECT CLASSIFICATION
-    // =====================================================
-
+    float delta = math::NormalizedAngle(shot - lastmove_body);
     const char* type = "UNKNOWN";
 
-    // CENTER
     if (fabsf(delta) < 20.f) {
         data->m_resolve_history.miss_center++;
         type = "CENTER";
     }
-
-    // RIGHT
     else if (delta > 0.f && fabsf(delta) <= 140.f) {
         data->m_resolve_history.miss_side++;
         type = "RIGHT";
     }
-
-    // LEFT
     else if (delta < 0.f && fabsf(delta) <= 140.f) {
         data->m_resolve_history.miss_invert++;
         type = "LEFT";
     }
-
-    // OPPOSITE (180)
     else {
         data->m_resolve_history.miss_bruteforce++;
         type = "OPPOSITE";
     }
 
-    // =====================================================
-    // 🔥 STORE FAILED ANGLE (anti-repeat system)
-    // =====================================================
-
     float norm = math::NormalizedAngle(shot);
     data->m_tried_angles.push_front(norm);
 
-    // limit memory
     if (data->m_tried_angles.size() > 8)
         data->m_tried_angles.pop_back();
-
-    // =====================================================
-    // 🔥 ANGLE STAT TRACKING
-    // =====================================================
 
     auto* stat = GetAngleStat(data, norm);
     if (stat)
         stat->misses++;
 
-    // decay old stats (keeps system adaptive)
     for (auto& s : data->m_angle_stats) {
         if (s.misses > 0)
             s.misses--;
     }
 
-    // =====================================================
-    // 🔥 DEBUG LOG (accurate now)
-    // =====================================================
-
     g_csgo.m_cvar->ConsoleColorPrintf(
         { 255, 200, 100, 255 },
-        "[DEBUG MISS CLASSIFY] delta: %.1f -> %s\n",
+        "[MISS] delta vs lastmove: %.1f -> %s\n",
         delta,
         type
     );
 }
 
+// ============================================================
+// ON HIT
+// ============================================================
+
 void Resolver::OnHit(AimPlayer* data) {
-    data->m_resolve_history.last_hit_angle =
-        data->m_resolve_history.last_angle;
+    data->m_resolve_history.last_hit_angle = data->m_resolve_history.last_angle;
 
     data->m_resolve_history.miss_bruteforce = 0;
     data->m_resolve_history.miss_side = 0;
@@ -1015,26 +838,25 @@ void Resolver::OnHit(AimPlayer* data) {
     data->m_resolve_history.miss_center = 0;
     data->m_resolve_history.brute_index = 0;
 
-    // 🔥 CLEAR HISTORY (WE FOUND THE RIGHT ANGLE)
     data->m_tried_angles.clear();
 
     float yaw = data->m_resolve_history.last_angle;
-
     auto* stat = GetAngleStat(data, yaw);
     if (stat)
         stat->hits++;
 }
 
+// ============================================================
+// MAX DESYNC DELTA
+// ============================================================
+
 float Resolver::GetMaxDesyncDelta(CCSGOPlayerAnimState* state) {
     if (!state)
-        return 60.f;
+        return 58.f; // 2018 engine cap
 
     float yaw_max = state->m_fl_aim_yaw_max;
     float yaw_min = state->m_fl_aim_yaw_min;
 
-    // take the larger magnitude
     float delta = std::max(fabsf(yaw_max), fabsf(yaw_min));
-
-    // safety clamp (engine limits)
-    return std::clamp(delta, 20.f, 120.f);
+    return std::clamp(delta, 20.f, 58.f); // 2018 hard cap is 58, not 120
 }

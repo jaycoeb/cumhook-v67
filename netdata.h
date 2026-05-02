@@ -16,8 +16,8 @@ private:
 	std::array< StoredData_t, MULTIPLAYER_BACKUP > m_data;
 
 public:
-	void store( );
-	void apply( );
+	void store(CUserCmd* cmd);
+	void apply(int tick);
 	void reset( );
 };
 
